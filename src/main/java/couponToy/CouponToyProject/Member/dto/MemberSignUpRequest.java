@@ -1,5 +1,7 @@
 package couponToy.CouponToyProject.Member.dto;
 
+import couponToy.CouponToyProject.Member.model.Member;
+import couponToy.CouponToyProject.global.constant.Role;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -22,5 +24,14 @@ public class MemberSignUpRequest {
     @NotBlank(message = "Username is required")
     @Pattern(regexp = "^[a-zA-Z가-힣]{2,12}$")
     private String name;
+
+    public Member toEntity() {
+        return Member.builder()
+                .email(email)
+                .password(password)
+                .name(name)
+                .role(Role.MEMBER)
+                .build();
+    }
 
 }
