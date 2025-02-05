@@ -13,7 +13,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 public class Member {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    private Integer memberId;
+    private Long memberId;
 
     @Column(nullable = false)
     private String email;
