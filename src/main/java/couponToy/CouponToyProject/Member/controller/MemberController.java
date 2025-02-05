@@ -1,5 +1,6 @@
 package couponToy.CouponToyProject.Member.controller;
 
+import couponToy.CouponToyProject.Member.dto.MemberLogInRequest;
 import couponToy.CouponToyProject.Member.dto.MemberSignUpRequest;
 import couponToy.CouponToyProject.Member.service.MemberService;
 import jakarta.validation.Valid;
@@ -15,7 +16,7 @@ public class MemberController {
 
     private final MemberService memberService;
 
-    @PostMapping("/signUp")
+    @PostMapping("/signup")
     public ResponseEntity<?> signUp(@RequestBody @Valid MemberSignUpRequest memberSignUpRequest) {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
@@ -23,4 +24,14 @@ public class MemberController {
                         memberService.signUpMember(memberSignUpRequest)
                 );
     }
+
+    @PostMapping("/login")
+    public ResponseEntity<?> login(@RequestBody @Valid MemberLogInRequest memberLogInRequest) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(
+                        memberService.login(memberLogInRequest)
+                );
+    }
+
+
 }
