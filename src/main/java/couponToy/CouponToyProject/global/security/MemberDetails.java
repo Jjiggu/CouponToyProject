@@ -11,7 +11,7 @@ import java.util.List;
 
 @Builder
 public class MemberDetails implements UserDetails {
-    private final Integer id;
+    private final Long id;
     private final String email;
     private final String password;
     private final Collection<? extends GrantedAuthority> authorities;

@@ -12,7 +12,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @Builder
 public class MemberSignUpResponse {
-    private Integer memberId;
+    private Long memberId;
     private String email;
     private String password;
     private String name;
