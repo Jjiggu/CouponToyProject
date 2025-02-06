@@ -33,5 +33,10 @@ public class MemberController {
                 );
     }
 
+    @GetMapping("/test")
+    public String test() {
+        return "접근 권한 테스트";
+    }
+
 
 }
