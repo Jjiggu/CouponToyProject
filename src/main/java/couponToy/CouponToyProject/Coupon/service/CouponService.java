@@ -2,6 +2,7 @@ package couponToy.CouponToyProject.Coupon.service;
 
 import couponToy.CouponToyProject.Coupon.dto.CouponCreateRequest;
 import couponToy.CouponToyProject.Coupon.dto.CouponCreateResponse;
+import couponToy.CouponToyProject.Coupon.dto.CouponReadResponse;
 import couponToy.CouponToyProject.Coupon.model.Coupon;
 import couponToy.CouponToyProject.Coupon.repository.CouponRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,4 +22,15 @@ public class CouponService {
 
         return CouponCreateResponse.fromEntity(coupon);
     }
+
+    @Transactional
+    public CouponReadResponse findCouponById(Long couponId) {
+
+        Coupon coupon = couponRepository.findById(couponId)
+                .orElseThrow(IllegalAccessError::new);
+
+        return CouponReadResponse.fromEntity(coupon);
+
+    }
+
 }
