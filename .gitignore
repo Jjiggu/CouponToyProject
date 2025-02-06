@@ -5,9 +5,10 @@ build/
 ### setiing files
 .DS_Store
 src/main/resources/application.yml
-src/main/resources/application-dev.yml
-src/main/resources/firebase
 src/test/resources/application.yml
+src/main/resources/docker-compose.yml
+src/test/resources/docker-compose.yml
+Dockerfile
 
 ### STS ###
 .apt_generated
