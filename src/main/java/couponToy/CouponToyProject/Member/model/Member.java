@@ -12,8 +12,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 @Table(name = "members")
 public class Member {
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
-    private Integer memberId;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long memberId;
 
     @Column(nullable = false)
     private String email;
