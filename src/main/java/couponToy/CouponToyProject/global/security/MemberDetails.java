@@ -11,7 +11,7 @@ import java.util.List;
 
 @Builder
 public class MemberDetails implements UserDetails {
-    private final Integer id;
+    private final Long id;
     private final String email;
     private final String password;
     private final Collection<? extends GrantedAuthority> authorities;
@@ -40,6 +40,30 @@ public class MemberDetails implements UserDetails {
     @Override
     public String getPassword() {
         return password;
+    }
+
+    public Long getMemberId() {
+        return id;
+    }
+
+    @Override
+    public boolean isAccountNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isAccountNonLocked() {
+        return true;
+    }
+
+    @Override
+    public boolean isCredentialsNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return true;
     }
 
 }
