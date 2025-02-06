@@ -2,6 +2,7 @@ package couponToy.CouponToyProject.global.config;
 
 import couponToy.CouponToyProject.global.security.JwtAuthenticationFilter;
 import couponToy.CouponToyProject.global.security.MemberDetailService;
+import couponToy.CouponToyProject.global.security.UnauthorizedHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,6 +23,7 @@ public class SecurityConfig {
 
     private final MemberDetailService memberDetailsService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final UnauthorizedHandler unauthorizedHandler;
 
 
     @Bean
@@ -33,8 +35,11 @@ public class SecurityConfig {
                 .formLogin(AbstractHttpConfigurer::disable)
                 .authenticationProvider(authenticationProvider())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                .authorizeHttpRequests(authorize ->
-                        authorize
+                .exceptionHandling(
+                        exceptionHandling -> exceptionHandling
+                                .authenticationEntryPoint(unauthorizedHandler)
+                )
+                .authorizeHttpRequests(registry -> registry
                                 .requestMatchers(HttpMethod.POST, "/members/signup").permitAll()
                                 .requestMatchers(HttpMethod.POST, "/members/login").permitAll()
                                 .anyRequest().authenticated()
