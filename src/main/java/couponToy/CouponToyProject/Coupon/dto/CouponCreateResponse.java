@@ -28,7 +28,7 @@ public class CouponCreateResponse extends BaseTimeEntity {
                 .couponId(coupon.getCouponId())
                 .name(coupon.getName())
                 .totalCount(coupon.getTotalCount())
-                .issuedCount(0)
+                .issuedCount(coupon.getIssuedCount())
                 .createdAt(coupon.getCreatedAt())
                 .updatedAt(coupon.getUpdatedAt())
                 .build();
