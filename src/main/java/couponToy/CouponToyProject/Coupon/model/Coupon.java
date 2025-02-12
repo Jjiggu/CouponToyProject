@@ -25,12 +25,18 @@ public class Coupon extends BaseTimeEntity {
     private String name;
 
     @Column(nullable = false)
-    @ColumnDefault("0")
     private Integer totalCount;
 
-    @Column(nullable = true)
-    @ColumnDefault("0")
+    @Column(nullable = false)
     private Integer issuedCount = 0;
+
+
+    @PrePersist
+    public void prePersist() {
+        if (this.issuedCount == null) {
+            this.issuedCount = 0;
+        }
+    }
 
 
     public void increaseIssue() {this.issuedCount++;}
