@@ -25,8 +25,12 @@ public enum ErrorCode {
 
 
     // Member
+
     DUPLICATE_EMAIL("이미 존재하는 이메일입니다"),
-    DUPLICATE_MEMBER("이미 등록된 회원입니다.");
+    DUPLICATE_MEMBER("이미 등록된 회원입니다."),
+    NOT_FOUND_MEMBER("일치하는 회원정보가 없습니다."),
+
+    NOT_FOUND_COUPON("일치하는 쿠폰정보가 없습니다. 쿠폰 번호를 확인해주세요");
 
     private final String message;
 }
