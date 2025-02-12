@@ -30,15 +30,9 @@ public class Coupon extends BaseTimeEntity {
 
     @Column(nullable = true)
     @ColumnDefault("0")
-    private Integer issuedCount;
+    private Integer issuedCount = 0;
 
 
-//    public Coupon(LocalDateTime regDate, LocalDateTime updateDate, Long couponId, String name, Integer totalCount, Integer issuedCount) {
-//        super(regDate, updateDate);
-//        this.couponId = couponId;
-//        this.name = name;
-//        this.totalCount = totalCount;
-//        this.issuedCount = issuedCount;
-//    }
+    public void increaseIssue() {this.issuedCount++;}
 
 }
