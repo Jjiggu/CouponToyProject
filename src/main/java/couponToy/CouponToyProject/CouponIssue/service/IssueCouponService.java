@@ -34,12 +34,11 @@ public class IssueCouponService {
                 () -> new CouponNotFoundException(ErrorCode.NOT_FOUND_COUPON)
         );
 
-
         coupon.increaseIssue();
 
         IssueCoupon issueCoupon = issueCouponRepository.save(issueCouponRequest.toEntity(member, coupon));
 
         return IssueCouponResponse.fromEntity(issueCoupon);
     }
-
 }
+
