@@ -29,7 +29,7 @@ public class MemberService {
 
 
     @Transactional
-    public MemberSignUpResponse signUpMember (MemberSignUpRequest memberSignUpRequest) {
+    public MemberSignUpResponse signUpMember(MemberSignUpRequest memberSignUpRequest) {
         validateEmailDuplicated(memberSignUpRequest);
 
         Member member = memberSignUpRequest.toEntity();
@@ -39,7 +39,7 @@ public class MemberService {
     }
 
     @Transactional
-    public MemberLogInResponse login (MemberLogInRequest memberLogInRequest) {
+    public MemberLogInResponse login(MemberLogInRequest memberLogInRequest) {
         Authentication authentication = authenticationProvider.authenticate(
                 new UsernamePasswordAuthenticationToken(memberLogInRequest.getEmail(), memberLogInRequest.getPassword())
         );
