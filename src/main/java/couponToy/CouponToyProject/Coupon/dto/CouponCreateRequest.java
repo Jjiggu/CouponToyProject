@@ -3,6 +3,7 @@ package couponToy.CouponToyProject.Coupon.dto;
 import couponToy.CouponToyProject.Coupon.model.Coupon;
 import couponToy.CouponToyProject.global.entity.BaseTimeEntity;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -16,6 +17,7 @@ public class CouponCreateRequest extends BaseTimeEntity {
     private String name;
 
     @NotNull
+    @Positive
     private Integer totalCount;
 
     public Coupon toEntity() {
