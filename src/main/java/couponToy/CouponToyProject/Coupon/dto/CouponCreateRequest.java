@@ -24,6 +24,7 @@ public class CouponCreateRequest extends BaseTimeEntity {
         return Coupon.builder()
                 .name(name)
                 .totalCount(totalCount)
+                .issuedCount(0)
                 .build();
     }
 }
