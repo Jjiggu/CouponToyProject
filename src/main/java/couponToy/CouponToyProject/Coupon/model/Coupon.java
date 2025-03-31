@@ -10,12 +10,12 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
 
-@Getter
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor
 @Entity
 @Table(name = "coupons")
 @SuperBuilder
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor
 public class Coupon extends BaseTimeEntity {
 
     @Id
@@ -30,6 +30,10 @@ public class Coupon extends BaseTimeEntity {
 
     @Column(nullable = false)
     private Integer issuedCount = 0;
+
+    @Version
+    @Column(name = "version")
+    private Long version;
 
     public void increaseIssueAmount() {
         if (issuedCount >= totalCount) {
