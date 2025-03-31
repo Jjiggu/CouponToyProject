@@ -26,8 +26,8 @@ public class IssueCouponResponse extends BaseTimeEntity {
         return IssueCouponResponse.builder()
                 .createdAt(couponIssue.getCreatedAt())
                 .issuedId(couponIssue.getIssuedId())
-                .memberId(couponIssue.getMember().getMemberId())
-                .couponId(couponIssue.getCoupon().getCouponId())
+                .memberId(couponIssue.getMemberId())
+                .couponId(couponIssue.getCouponId())
                 .build();
 
     }

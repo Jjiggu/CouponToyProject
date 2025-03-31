@@ -14,15 +14,19 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class IssueCouponRequest extends BaseTimeEntity {
 
-    private Member member;
+    private Long memberId;
 
-    private Coupon coupon;
+    private Long couponId;
+
+//    private Member member;
+//
+//    private Coupon coupon;
 
 
     public IssueCoupon toEntity(Member member, Coupon coupon) {
         return IssueCoupon.builder()
-                .member(member)
-                .coupon(coupon)
+                .memberId(member.getMemberId())
+                .couponId(coupon.getCouponId())
                 .build();
     }
 
