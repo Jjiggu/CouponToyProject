@@ -106,6 +106,7 @@ public class IssueCouponServiceTest {
 
     @Test
     @DisplayName("쿠폰 생성 테스트")
+    @Transactional
     void issuedCouponTest() {
         // given
         Coupon coupon = createTestCoupon(10);
@@ -125,6 +126,7 @@ public class IssueCouponServiceTest {
 
     @Test
     @DisplayName("쿠폰 순차적 발급 테스트")
+    @Transactional
     void issuedConcurrencyTest() {
         // given
         int memberCount = 10;
@@ -166,8 +168,6 @@ public class IssueCouponServiceTest {
         int couponAmount = 10;
 
         Coupon coupon = createTestCoupon(couponAmount);
-        System.out.println("🎫 생성된 쿠폰 ID: " + coupon.getCouponId());
-
 
         ExecutorService executorService = Executors.newFixedThreadPool(30);
         CountDownLatch latch = new CountDownLatch(threadCount);
@@ -192,7 +192,7 @@ public class IssueCouponServiceTest {
                     successCount.incrementAndGet();
                 } catch (Exception e) {
                     failCount.incrementAndGet();
-                    System.out.println("❌ 발급 실패: " + e.getMessage());
+                    System.out.println("발급 실패: " + e.getMessage());
                 } finally {
                     latch.countDown();
                 }
@@ -202,13 +202,13 @@ public class IssueCouponServiceTest {
         latch.await(); // 모든 스레드 작업 종료 대기
 
         // then
-//        long issuedCoupons = issueCouponRepository.countByCoupon_CouponId(coupon.getCouponId());
         long issuedCoupons = issueCouponRepository.countByCouponId(coupon.getCouponId());
 
-        System.out.println("✅ 성공 수: " + successCount.get());
-        System.out.println("❌ 실패 수: " + failCount.get());
-        System.out.println("📦 DB 발급 수: " + issuedCoupons);
+        System.out.println("발급 성공 : " + successCount.get());
+        System.out.println("발급 실패 : " + failCount.get());
+        System.out.println("총 발급 : " + issuedCoupons);
 
-        assertThat(issuedCoupons).isNotEqualTo(Math.min(threadCount, couponAmount));
+        assertThat(issuedCoupons).isLessThan(threadCount);
+        assertThat(issuedCoupons).isLessThan(couponAmount);
     }
 }
