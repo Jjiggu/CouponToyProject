@@ -1,6 +1,8 @@
 package couponToy.CouponToyProject.Coupon.model;
 
+import couponToy.CouponToyProject.global.constant.ErrorCode;
 import couponToy.CouponToyProject.global.entity.BaseTimeEntity;
+import couponToy.CouponToyProject.global.exception.CouponSoldOutException;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -30,15 +32,11 @@ public class Coupon extends BaseTimeEntity {
     @Column(nullable = false)
     private Integer issuedCount = 0;
 
-
-    @PrePersist
-    public void prePersist() {
-        if (this.issuedCount == null) {
-            this.issuedCount = 0;
+    public void increaseIssueAmount() {
+        if (issuedCount >= totalCount) {
+            throw new CouponSoldOutException(ErrorCode.COUPON_SOLD_OUT);
         }
+        issuedCount++;
     }
-
-
-    public void increaseIssue() {this.issuedCount++;}
 
 }

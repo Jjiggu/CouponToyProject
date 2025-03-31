@@ -35,12 +35,9 @@ public class IssueCouponService {
                 () -> new CouponNotFoundException(ErrorCode.NOT_FOUND_COUPON)
         );
 
-        if(coupon.getIssuedCount() >= coupon.getTotalCount()) {
-            throw new CouponSoldOutException(ErrorCode.COUPON_SOLD_OUT);
-        }
-
-        coupon.increaseIssue();
+        coupon.increaseIssueAmount();
         IssueCoupon issueCoupon = issueCouponRepository.save(issueCouponRequest.toEntity(member, coupon));
+
         return IssueCouponResponse.fromEntity(issueCoupon);
     }
 }
