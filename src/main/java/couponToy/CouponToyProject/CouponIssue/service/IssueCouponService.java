@@ -10,6 +10,7 @@ import couponToy.CouponToyProject.Member.model.Member;
 import couponToy.CouponToyProject.Member.repository.MemberRepository;
 import couponToy.CouponToyProject.global.constant.ErrorCode;
 import couponToy.CouponToyProject.global.exception.CouponNotFoundException;
+import couponToy.CouponToyProject.global.exception.CouponSoldOutException;
 import couponToy.CouponToyProject.global.exception.MemberNotFoundException;
 import couponToy.CouponToyProject.global.security.MemberDetails;
 import lombok.RequiredArgsConstructor;
@@ -34,10 +35,12 @@ public class IssueCouponService {
                 () -> new CouponNotFoundException(ErrorCode.NOT_FOUND_COUPON)
         );
 
+        if(coupon.getIssuedCount() >= coupon.getTotalCount()) {
+            throw new CouponSoldOutException(ErrorCode.COUPON_SOLD_OUT);
+        }
+
         coupon.increaseIssue();
-
         IssueCoupon issueCoupon = issueCouponRepository.save(issueCouponRequest.toEntity(member, coupon));
-
         return IssueCouponResponse.fromEntity(issueCoupon);
     }
 }
