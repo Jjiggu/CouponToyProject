@@ -20,12 +20,21 @@ public class IssueCoupon extends BaseTimeEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long issuedId;
 
-    @ManyToOne
-    @JoinColumn(name = "member_id")
-    private Member member;
+    private Long memberId;
 
-    @ManyToOne
-    @JoinColumn(name = "coupon_id")
-    private Coupon coupon;
+    private Long couponId;
+
+//    @ManyToOne
+//    @JoinColumn(name = "member_id")
+//    private Member member;
+//
+//    @ManyToOne
+//    @JoinColumn(name = "coupon_id")
+//    private Coupon coupon;
+
+    public IssueCoupon(Member member, Coupon coupon) {
+        this.memberId = member.getMemberId();
+        this.couponId = coupon.getCouponId();
+    }
 
 }
