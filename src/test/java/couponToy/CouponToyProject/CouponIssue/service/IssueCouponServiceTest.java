@@ -106,6 +106,7 @@ public class IssueCouponServiceTest {
 
     @Test
     @DisplayName("쿠폰 생성 테스트")
+    @Transactional
     void issuedCouponTest() {
         // given
         Coupon coupon = createTestCoupon(10);
@@ -125,6 +126,7 @@ public class IssueCouponServiceTest {
 
     @Test
     @DisplayName("쿠폰 순차적 발급 테스트")
+    @Transactional
     void issuedConcurrencyTest() {
         // given
         int memberCount = 10;
@@ -209,6 +211,6 @@ public class IssueCouponServiceTest {
         System.out.println("❌ 실패 수: " + failCount.get());
         System.out.println("📦 DB 발급 수: " + issuedCoupons);
 
-        assertThat(issuedCoupons).isNotEqualTo(Math.min(threadCount, couponAmount));
+        assertThat(issuedCoupons).isNotEqualTo(couponAmount);
     }
 }
