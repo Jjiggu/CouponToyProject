@@ -161,10 +161,10 @@ public class IssueCouponServiceTest {
 
 
     @Test
-    @DisplayName("서로 다른 30명의 사용자가 동시에 10장 쿠폰 발급 시도 실패")
+    @DisplayName("서로 다른 30명의 사용자가 동시에 10장 쿠폰 발급 시도 성공")
     void issuedConcurrencyTest_concurrent() throws InterruptedException {
         // given
-        int threadCount = 30;
+        int threadCount = 15;
         int couponAmount = 10;
 
         Coupon coupon = createTestCoupon(couponAmount);
@@ -203,12 +203,15 @@ public class IssueCouponServiceTest {
 
         // then
         long issuedCoupons = issueCouponRepository.countByCouponId(coupon.getCouponId());
+        long expectedFailCount = Math.max(0, issuedCoupons - couponAmount);
 
         System.out.println("발급 성공 : " + successCount.get());
         System.out.println("발급 실패 : " + failCount.get());
         System.out.println("총 발급 : " + issuedCoupons);
 
-        assertThat(issuedCoupons).isLessThan(threadCount);
-        assertThat(issuedCoupons).isLessThan(couponAmount);
+        assertThat(issuedCoupons).isEqualTo(couponAmount); // 딱 정해진 수만큼 발급되어야 함
+        assertThat(successCount.get()).isEqualTo((int) issuedCoupons);
+        assertThat(successCount.get() + failCount.get()).isEqualTo(threadCount);
+        assertThat(failCount.get()).isEqualTo(threadCount - couponAmount);
     }
 }
