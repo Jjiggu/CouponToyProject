@@ -110,7 +110,7 @@ public class IssueCouponServiceTest {
         // given
         Coupon coupon = createTestCoupon(10);
         Member member = createTestMember();
-        IssueCouponRequest request = new IssueCouponRequest(member, coupon);
+        IssueCouponRequest request = new IssueCouponRequest(member.getMemberId(), coupon.getCouponId());
 
         // when
         IssueCouponResponse issueCoupon = issueCouponService.issueCoupon(request,
@@ -128,7 +128,7 @@ public class IssueCouponServiceTest {
     void issuedConcurrencyTest() {
         // given
         int memberCount = 10;
-        int couponAmount = 10;
+        int couponAmount = 5;
 
         Coupon coupon = createTestCoupon(couponAmount);
         Member member = createTestMember();
@@ -138,7 +138,7 @@ public class IssueCouponServiceTest {
         // when
         for (int i = 0; i < memberCount; i++) {
             try {
-                IssueCouponRequest request = new IssueCouponRequest(member, coupon);
+                IssueCouponRequest request = new IssueCouponRequest(member.getMemberId(), coupon.getCouponId());
                 issueCouponService.issueCoupon(request,
                         (MemberDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal(),
                         coupon.getCouponId());
@@ -152,7 +152,8 @@ public class IssueCouponServiceTest {
         System.out.println("failCount = " + failCount);
 
         // then
-        long issuedCoupons = issueCouponRepository.countByCoupon_CouponId(coupon.getCouponId());
+//        long issuedCoupons = issueCouponRepository.countByCoupon_CouponId(coupon.getCouponId());
+        long issuedCoupons = issueCouponRepository.countByCouponId(coupon.getCouponId());
         assertThat(issuedCoupons).isEqualTo(Math.min(memberCount, couponAmount));
     }
 
@@ -161,7 +162,7 @@ public class IssueCouponServiceTest {
     @DisplayName("서로 다른 30명의 사용자가 동시에 10장 쿠폰 발급 시도 실패")
     void issuedConcurrencyTest_concurrent() throws InterruptedException {
         // given
-        int threadCount = 10;
+        int threadCount = 30;
         int couponAmount = 10;
 
         Coupon coupon = createTestCoupon(couponAmount);
@@ -183,7 +184,7 @@ public class IssueCouponServiceTest {
                     Member member = createMultiTestMember(index);
 
                     // 3. 쿠폰 발급 시도
-                    IssueCouponRequest request = new IssueCouponRequest(member, coupon);
+                    IssueCouponRequest request = new IssueCouponRequest(member.getMemberId(), coupon.getCouponId());
                     issueCouponService.issueCoupon(request,
                             (MemberDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal(),
                             coupon.getCouponId());
@@ -201,7 +202,8 @@ public class IssueCouponServiceTest {
         latch.await(); // 모든 스레드 작업 종료 대기
 
         // then
-        long issuedCoupons = issueCouponRepository.countByCoupon_CouponId(coupon.getCouponId());
+//        long issuedCoupons = issueCouponRepository.countByCoupon_CouponId(coupon.getCouponId());
+        long issuedCoupons = issueCouponRepository.countByCouponId(coupon.getCouponId());
 
         System.out.println("✅ 성공 수: " + successCount.get());
         System.out.println("❌ 실패 수: " + failCount.get());
