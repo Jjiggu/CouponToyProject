@@ -3,8 +3,6 @@ package couponToy.CouponToyProject.CouponIssue.dto;
 import couponToy.CouponToyProject.Coupon.model.Coupon;
 import couponToy.CouponToyProject.CouponIssue.model.IssueCoupon;
 import couponToy.CouponToyProject.Member.model.Member;
-import couponToy.CouponToyProject.global.entity.BaseTimeEntity;
-import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -12,17 +10,17 @@ import lombok.NoArgsConstructor;
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor
-public class IssueCouponRequest extends BaseTimeEntity {
+public class IssueCouponRequest {
 
-    private Member member;
+    private Long memberId;
 
-    private Coupon coupon;
+    private Long couponId;
 
 
     public IssueCoupon toEntity(Member member, Coupon coupon) {
         return IssueCoupon.builder()
-                .member(member)
-                .coupon(coupon)
+                .memberId(member.getMemberId())
+                .couponId(coupon.getCouponId())
                 .build();
     }
 

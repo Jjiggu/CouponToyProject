@@ -30,7 +30,9 @@ public enum ErrorCode {
     DUPLICATE_MEMBER("이미 등록된 회원입니다."),
     NOT_FOUND_MEMBER("일치하는 회원정보가 없습니다."),
 
-    NOT_FOUND_COUPON("일치하는 쿠폰정보가 없습니다. 쿠폰 번호를 확인해주세요");
+    // Coupon
+    NOT_FOUND_COUPON("일치하는 쿠폰정보가 없습니다. 쿠폰 번호를 확인해주세요"),
+    COUPON_SOLD_OUT("쿠폰이 모두 소진되었습니다.");
 
     private final String message;
 }
