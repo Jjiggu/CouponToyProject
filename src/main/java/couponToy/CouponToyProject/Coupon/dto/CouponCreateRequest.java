@@ -11,7 +11,7 @@ import lombok.NoArgsConstructor;
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor
-public class CouponCreateRequest extends BaseTimeEntity {
+public class CouponCreateRequest {
 
     @NotNull
     private String name;
