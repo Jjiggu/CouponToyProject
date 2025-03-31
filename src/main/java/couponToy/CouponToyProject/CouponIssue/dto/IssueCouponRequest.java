@@ -12,15 +12,11 @@ import lombok.NoArgsConstructor;
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor
-public class IssueCouponRequest extends BaseTimeEntity {
+public class IssueCouponRequest {
 
     private Long memberId;
 
     private Long couponId;
-
-//    private Member member;
-//
-//    private Coupon coupon;
 
 
     public IssueCoupon toEntity(Member member, Coupon coupon) {
