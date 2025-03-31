@@ -3,8 +3,6 @@ package couponToy.CouponToyProject.CouponIssue.dto;
 import couponToy.CouponToyProject.Coupon.model.Coupon;
 import couponToy.CouponToyProject.CouponIssue.model.IssueCoupon;
 import couponToy.CouponToyProject.Member.model.Member;
-import couponToy.CouponToyProject.global.entity.BaseTimeEntity;
-import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;

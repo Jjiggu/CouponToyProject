@@ -10,7 +10,6 @@ import couponToy.CouponToyProject.Member.model.Member;
 import couponToy.CouponToyProject.Member.repository.MemberRepository;
 import couponToy.CouponToyProject.global.constant.ErrorCode;
 import couponToy.CouponToyProject.global.exception.CouponNotFoundException;
-import couponToy.CouponToyProject.global.exception.CouponSoldOutException;
 import couponToy.CouponToyProject.global.exception.MemberNotFoundException;
 import couponToy.CouponToyProject.global.security.MemberDetails;
 import lombok.RequiredArgsConstructor;
