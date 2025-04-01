@@ -8,6 +8,7 @@ import couponToy.CouponToyProject.CouponIssue.model.IssueCoupon;
 import couponToy.CouponToyProject.CouponIssue.repository.IssueCouponRepository;
 import couponToy.CouponToyProject.Member.model.Member;
 import couponToy.CouponToyProject.Member.repository.MemberRepository;
+import couponToy.CouponToyProject.global.aop.annotation.Retry;
 import couponToy.CouponToyProject.global.constant.ErrorCode;
 import couponToy.CouponToyProject.global.exception.CouponNotFoundException;
 import couponToy.CouponToyProject.global.exception.MemberNotFoundException;
@@ -24,6 +25,7 @@ public class IssueCouponService {
     private final MemberRepository memberRepository;
     private final CouponRepository couponRepository;
 
+    @Retry
     @Transactional
     public IssueCouponResponse issueCoupon(IssueCouponRequest issueCouponRequest, MemberDetails memberDetails, Long couponId) {
         Member member = memberRepository.findById(memberDetails.getMemberId()).orElseThrow(

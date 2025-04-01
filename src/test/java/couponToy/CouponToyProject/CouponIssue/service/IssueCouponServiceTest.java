@@ -104,6 +104,7 @@ public class IssueCouponServiceTest {
         return couponRepository.findById(createdCoupon.getCouponId()).orElseThrow();
     }
 
+
     @Test
     @DisplayName("쿠폰 생성 테스트")
     @Transactional
@@ -124,8 +125,9 @@ public class IssueCouponServiceTest {
         assertThat(issueCoupon.getMemberId()).isEqualTo(member.getMemberId());
     }
 
+
     @Test
-    @DisplayName("쿠폰 순차적 발급 테스트")
+    @DisplayName("동일 유저 쿠폰 순차적 발급 테스트")
     @Transactional
     void issuedConcurrencyTest() {
         // given
@@ -134,6 +136,7 @@ public class IssueCouponServiceTest {
 
         Coupon coupon = createTestCoupon(couponAmount);
         Member member = createTestMember();
+
         AtomicInteger successCount = new AtomicInteger();
         AtomicInteger failCount = new AtomicInteger();
 
@@ -161,7 +164,48 @@ public class IssueCouponServiceTest {
 
 
     @Test
-    @DisplayName("서로 다른 30명의 사용자가 동시에 10장 쿠폰 발급 시도 실패")
+    @DisplayName("여러 유저 쿠폰 순차적 발급 테스트")
+    @Transactional
+    void issuedSequentialTest() {
+        // given
+        int memberCount = 10;
+        int couponAmount = 5;
+
+        Coupon coupon = createTestCoupon(couponAmount);
+
+        AtomicInteger successCount = new AtomicInteger();
+        AtomicInteger failCount = new AtomicInteger();
+
+        // when
+        for (int i = 0; i < memberCount; i++) {
+            try {
+                Member member = createMultiTestMember(i);
+
+                IssueCouponRequest request = new IssueCouponRequest(member.getMemberId(), coupon.getCouponId());
+                issueCouponService.issueCoupon(request,
+                        (MemberDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal(),
+                        coupon.getCouponId());
+
+                successCount.incrementAndGet();
+            } catch (Exception e) {
+                failCount.incrementAndGet();
+            }
+        }
+
+        System.out.println("successCount = " + successCount);
+        System.out.println("failCount = " + failCount);
+
+        // then
+        long issuedCoupons = issueCouponRepository.countByCouponId(coupon.getCouponId());
+
+        assertThat(issuedCoupons).isEqualTo(couponAmount);
+        assertThat(failCount.get()).isEqualTo(memberCount - issuedCoupons);
+    }
+
+
+
+    @Test
+    @DisplayName("서로 다른 30명의 사용자가 동시에 10장 쿠폰 발급 시도 성공")
     void issuedConcurrencyTest_concurrent() throws InterruptedException {
         // given
         int threadCount = 30;
@@ -203,12 +247,15 @@ public class IssueCouponServiceTest {
 
         // then
         long issuedCoupons = issueCouponRepository.countByCouponId(coupon.getCouponId());
+        long expectedFailCount = Math.max(0, issuedCoupons - couponAmount);
 
-        System.out.println("발급 성공 : " + successCount.get());
-        System.out.println("발급 실패 : " + failCount.get());
-        System.out.println("총 발급 : " + issuedCoupons);
+        System.out.println("successCount : " + successCount.get());
+        System.out.println("failCount : " + failCount.get());
+        System.out.println("issuedCount : " + issuedCoupons);
 
-        assertThat(issuedCoupons).isLessThan(threadCount);
-        assertThat(issuedCoupons).isLessThan(couponAmount);
+        assertThat(issuedCoupons).isEqualTo(couponAmount); // 딱 정해진 수만큼 발급되어야 함
+        assertThat(successCount.get()).isEqualTo((int) issuedCoupons);
+        assertThat(successCount.get() + failCount.get()).isEqualTo(threadCount);
+        assertThat(failCount.get()).isEqualTo(threadCount - couponAmount);
     }
 }
