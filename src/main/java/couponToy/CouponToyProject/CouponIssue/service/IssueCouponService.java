@@ -25,7 +25,6 @@ public class IssueCouponService {
     private final MemberRepository memberRepository;
     private final CouponRepository couponRepository;
 
-    @Retry
     @Transactional
     public IssueCouponResponse issueCoupon(IssueCouponRequest issueCouponRequest, MemberDetails memberDetails, Long couponId) {
         Member member = memberRepository.findById(memberDetails.getMemberId()).orElseThrow(
