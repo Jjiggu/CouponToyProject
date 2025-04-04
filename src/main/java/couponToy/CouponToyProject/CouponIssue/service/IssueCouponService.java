@@ -25,14 +25,13 @@ public class IssueCouponService {
     private final MemberRepository memberRepository;
     private final CouponRepository couponRepository;
 
-    @Retry
     @Transactional
     public IssueCouponResponse issueCoupon(IssueCouponRequest issueCouponRequest, MemberDetails memberDetails, Long couponId) {
         Member member = memberRepository.findById(memberDetails.getMemberId()).orElseThrow(
                 () -> new MemberNotFoundException(ErrorCode.NOT_FOUND_MEMBER)
         );
 
-        Coupon coupon = couponRepository.findById(couponId).orElseThrow(
+        Coupon coupon = couponRepository.findByCouponIdForUpdate(couponId).orElseThrow(
                 () -> new CouponNotFoundException(ErrorCode.NOT_FOUND_COUPON)
         );
 

@@ -31,10 +31,6 @@ public class Coupon extends BaseTimeEntity {
     @Column(nullable = false)
     private Integer issuedCount = 0;
 
-    @Version
-    @Column(name = "version")
-    private Long version;
-
     public void increaseIssueAmount() {
         if (issuedCount >= totalCount) {
             throw new CouponSoldOutException(ErrorCode.COUPON_SOLD_OUT);
