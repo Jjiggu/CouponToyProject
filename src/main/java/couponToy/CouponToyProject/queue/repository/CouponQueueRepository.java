@@ -1,11 +1,13 @@
 package couponToy.CouponToyProject.queue.repository;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.util.Set;
 
+@Slf4j
 @Repository
 @RequiredArgsConstructor
 public class CouponQueueRepository {
@@ -53,7 +55,7 @@ public class CouponQueueRepository {
         String key = buildIssuedKey(couponId);
         Double score = redisTemplate.opsForZSet().score(key, String.valueOf(userId));
 
-        System.out.println("check issued - userId: " + userId + ", score: " + score);
+        log.debug("check issued - userId: {}, score: {}", userId, score);
 
         return score != null;
     }
