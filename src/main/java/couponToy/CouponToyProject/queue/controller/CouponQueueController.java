@@ -4,6 +4,7 @@ import couponToy.CouponToyProject.global.api.ApiUtils;
 import couponToy.CouponToyProject.global.security.MemberDetails;
 import couponToy.CouponToyProject.queue.service.CouponQueueService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -28,8 +29,12 @@ public class CouponQueueController {
         couponQueueService.registerUser(couponId, userId);
         Long rank = couponQueueService.getUserRank(couponId, userId);
 
-        return ResponseEntity.ok(
-                ApiUtils.success("쿠폰 발급 요청 완료. 현재 대기 순번: " + (rank + 1))
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(
+                    ApiUtils.success(
+                            "쿠폰 발급 요청 완료. 현재 대기 순번: " + (rank + 1)
+                    )
         );
     }
 
@@ -44,6 +49,7 @@ public class CouponQueueController {
         Long userId = memberDetails.getMemberId();
 
         boolean issued = couponQueueService.isAlreadyIssued(couponId, userId);
+
         return ResponseEntity.ok(
                 ApiUtils.success(issued ? "쿠폰 발급 완료됨" : "아직 미발급")
         );
