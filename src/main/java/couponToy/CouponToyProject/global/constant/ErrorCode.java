@@ -32,7 +32,11 @@ public enum ErrorCode {
 
     // Coupon
     NOT_FOUND_COUPON("일치하는 쿠폰정보가 없습니다. 쿠폰 번호를 확인해주세요"),
-    COUPON_SOLD_OUT("쿠폰이 모두 소진되었습니다.");
+    COUPON_SOLD_OUT("쿠폰이 모두 소진되었습니다."),
+
+
+    // Queue
+    IS_ALREADY_ISSUED("이미 쿠폰 발급 받은 사용자입니다.");
 
     private final String message;
 }

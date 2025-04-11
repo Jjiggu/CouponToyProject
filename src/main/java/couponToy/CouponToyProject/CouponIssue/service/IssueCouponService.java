@@ -8,7 +8,6 @@ import couponToy.CouponToyProject.CouponIssue.model.IssueCoupon;
 import couponToy.CouponToyProject.CouponIssue.repository.IssueCouponRepository;
 import couponToy.CouponToyProject.Member.model.Member;
 import couponToy.CouponToyProject.Member.repository.MemberRepository;
-import couponToy.CouponToyProject.global.aop.annotation.Retry;
 import couponToy.CouponToyProject.global.constant.ErrorCode;
 import couponToy.CouponToyProject.global.exception.CouponNotFoundException;
 import couponToy.CouponToyProject.global.exception.MemberNotFoundException;
@@ -31,8 +30,8 @@ public class IssueCouponService {
                 () -> new MemberNotFoundException(ErrorCode.NOT_FOUND_MEMBER)
         );
 
-        Coupon coupon = couponRepository.findByCouponIdForUpdate(couponId).orElseThrow(
-                () -> new CouponNotFoundException(ErrorCode.NOT_FOUND_COUPON)
+        Coupon coupon = couponRepository.findByCouponIdForUpdate(couponId)
+                .orElseThrow(() -> new CouponNotFoundException(ErrorCode.NOT_FOUND_COUPON)
         );
 
         coupon.increaseIssueAmount();

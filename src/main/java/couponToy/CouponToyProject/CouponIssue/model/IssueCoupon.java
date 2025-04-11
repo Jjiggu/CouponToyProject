@@ -24,17 +24,8 @@ public class IssueCoupon extends BaseTimeEntity {
 
     private Long couponId;
 
-//    @ManyToOne
-//    @JoinColumn(name = "member_id")
-//    private Member member;
-//
-//    @ManyToOne
-//    @JoinColumn(name = "coupon_id")
-//    private Coupon coupon;
-
     public IssueCoupon(Member member, Coupon coupon) {
         this.memberId = member.getMemberId();
         this.couponId = coupon.getCouponId();
     }
-
 }
