@@ -3,6 +3,7 @@ package couponToy.CouponToyProject.queue.scheduler;
 import couponToy.CouponToyProject.CouponIssue.service.IssueCouponService;
 import couponToy.CouponToyProject.global.exception.CouponSoldOutException;
 import couponToy.CouponToyProject.queue.repository.CouponQueueRepository;
+import couponToy.CouponToyProject.queue.service.CouponQueueSchedulerService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.connection.RedisConnection;
@@ -25,8 +26,8 @@ import java.util.Set;
 public class CouponQueueScheduler {
 
     private final CouponQueueRepository couponQueueRepository;
-    private final IssueCouponService issueCouponService;
     private final StringRedisTemplate redisTemplate;
+    private final CouponQueueSchedulerService queueSchedulerService;
 
     // 한 번에 처리할 사용자 수 (예: 상위 5명)
     private static final long PROCESS_COUNT = 5;
@@ -92,7 +93,7 @@ public class CouponQueueScheduler {
         for (String userIdStr : waitingUserIds) {
             try {
                 Long userId = Long.valueOf(userIdStr);
-                issueCouponService.issueFromQueue(couponId, userId);
+                queueSchedulerService.issueFromQueue(couponId, userId);
 
                 couponQueueRepository.removeUserFromQueue(couponId, userId);
                 couponQueueRepository.addToIssuedSet(couponId, userId);
