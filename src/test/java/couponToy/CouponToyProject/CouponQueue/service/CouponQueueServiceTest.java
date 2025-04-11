@@ -275,7 +275,7 @@ public class CouponQueueServiceTest {
             couponQueueService.registerUser(couponId, member.getMemberId());
         }
 
-        // when: 스케줄러 실행 대기 (1~2초 사이 실행됨)
+        // when
         Thread.sleep(3000);
 
         // then
@@ -291,12 +291,12 @@ public class CouponQueueServiceTest {
 
 
     @Test
-    @DisplayName("대기열 등록 후 스케줄러 발급 정상 처리")
-    void concurrentSchedulerIssueFlowTest() throws InterruptedException {
+    @DisplayName("멀티 스레드 환경 쿠폰 발급 테스트")
+    void concurrentQueueIssueTest() throws InterruptedException {
 
         // given
-        int threadCount = 50;
-        int couponAmount = 10;
+        int threadCount = 100;
+        int couponAmount = 70;
 
         Coupon coupon = createTestCoupon(couponAmount);
         Long couponId = coupon.getCouponId();
@@ -326,7 +326,7 @@ public class CouponQueueServiceTest {
             });
         }
 
-        Thread.sleep(3000);
+        Thread.sleep(10000);
         latch.await(); // 모든 스레드 작업 종료 대기
 
         // then
@@ -338,5 +338,18 @@ public class CouponQueueServiceTest {
 
         assertThat(issuedCount).isEqualTo(couponAmount);
         assertThat(redisIssuedSize).isEqualTo((long) couponAmount);
+    }
+
+
+    @Test
+    @DisplayName("목업 유저 생성")
+    void makeMultiUser() throws InterruptedException {
+
+        // given
+        int userCount = 1000;
+
+        for (int i = 0; i < userCount; i++) {
+            Member member = createMultiTestMember(i);
+        }
     }
 }
