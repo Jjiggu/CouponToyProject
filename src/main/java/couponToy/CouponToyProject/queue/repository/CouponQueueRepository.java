@@ -14,6 +14,7 @@ public class CouponQueueRepository {
     private static final String WAITING_KEY_PREFIX = "coupon:waiting:";
     private static final String ISSUED_KEY_PREFIX = "coupon:issued:";
 
+
     public String buildQueueKey(Long couponId) {
         return WAITING_KEY_PREFIX + couponId;
     }
@@ -50,7 +51,11 @@ public class CouponQueueRepository {
 
     public boolean isAlreadyIssued(Long couponId, Long userId) {
         String key = buildIssuedKey(couponId);
-        return redisTemplate.opsForZSet().score(key, String.valueOf(userId)) != null;
+        Double score = redisTemplate.opsForZSet().score(key, String.valueOf(userId));
+
+        System.out.println("check issued - userId: " + userId + ", score: " + score);
+
+        return score != null;
     }
 
     public Long getQueueSize(Long couponId) {
