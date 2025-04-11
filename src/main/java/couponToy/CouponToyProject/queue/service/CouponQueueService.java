@@ -29,7 +29,7 @@ public class CouponQueueService {
         return couponQueueRepository.isAlreadyIssued(couponId, userId);
     }
 
-    public void validatedNotIssued(Long couponId, Long userId) {
+    private void validatedNotIssued(Long couponId, Long userId) {
         if (couponQueueRepository.isAlreadyIssued(couponId, userId)) {
             throw new IsAlreadyIssued(ErrorCode.IS_ALREADY_ISSUED);
         }
