@@ -1,6 +1,7 @@
 package couponToy.CouponToyProject.queue.scheduler;
 
 import couponToy.CouponToyProject.CouponIssue.service.IssueCouponService;
+import couponToy.CouponToyProject.global.exception.CouponSoldOutException;
 import couponToy.CouponToyProject.queue.repository.CouponQueueRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,7 +13,6 @@ import org.springframework.data.redis.core.Cursor;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
@@ -36,8 +36,7 @@ public class CouponQueueScheduler {
      * 1초마다 실행하여, Redis에 저장된 모든 coupon:waiting:* 키를 동적으로 조회한 후,
      * 각 쿠폰 대기열에 대해 상위 PROCESS_COUNT명의 사용자에 대해 발급 처리를 시도한다.
      */
-    @Scheduled(fixedDelay = 1000)
-    @Transactional
+    @Scheduled(fixedDelay = 500)
     public void processQueue() {
         Set<String> waitingKeys = getAllWaitingQueueKeys();
         if (waitingKeys.isEmpty()) {
@@ -93,17 +92,18 @@ public class CouponQueueScheduler {
         for (String userIdStr : waitingUserIds) {
             try {
                 Long userId = Long.valueOf(userIdStr);
-                boolean issued = issueCouponService.issueFromQueue(couponId, userId);
-                if (issued) {
-                    couponQueueRepository.removeUserFromQueue(couponId, userId);
-                    couponQueueRepository.addToIssuedSet(couponId, userId);
-                    log.info("쿠폰 발급 완료 - couponId: {}, userId: {}", couponId, userId);
-                } else {
-                    // 발급 수량이 소진된 경우, 대기열을 전체 삭제(또는 다른 처리를 수행)
-                    log.info("쿠폰 발급 수량 소진 - couponId: {}", couponId);
-                    clearWaitingQueue(couponId);
-                    break;
-                }
+                issueCouponService.issueFromQueue(couponId, userId);
+
+                couponQueueRepository.removeUserFromQueue(couponId, userId);
+                couponQueueRepository.addToIssuedSet(couponId, userId);
+                log.info("쿠폰 발급 완료 - couponId: {}, userId: {}", couponId, userId);
+
+            } catch (CouponSoldOutException e) {
+                // 발급 수량이 소진된 경우, 대기열을 전체 삭제(또는 다른 처리를 수행)
+                log.info("쿠폰 발급 수량 소진 - couponId: {}", couponId);
+                clearWaitingQueue(couponId);
+                break;
+
             } catch (Exception e) {
                 log.error("쿠폰 발급 처리 중 오류 발생 - couponId: {}, userId: {}", couponId, userIdStr, e);
             }

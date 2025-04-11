@@ -8,16 +8,16 @@ import couponToy.CouponToyProject.CouponIssue.model.IssueCoupon;
 import couponToy.CouponToyProject.CouponIssue.repository.IssueCouponRepository;
 import couponToy.CouponToyProject.Member.model.Member;
 import couponToy.CouponToyProject.Member.repository.MemberRepository;
-import couponToy.CouponToyProject.global.aop.annotation.Retry;
 import couponToy.CouponToyProject.global.constant.ErrorCode;
 import couponToy.CouponToyProject.global.exception.CouponNotFoundException;
 import couponToy.CouponToyProject.global.exception.MemberNotFoundException;
 import couponToy.CouponToyProject.global.security.MemberDetails;
-import couponToy.CouponToyProject.queue.repository.CouponQueueRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class IssueCouponService {
@@ -44,27 +44,21 @@ public class IssueCouponService {
 
 
     @Transactional
-    public boolean issueFromQueue(Long couponId, Long userId) {
+    public void issueFromQueue(Long couponId, Long userId) {
         // 1. 쿠폰을 비관적 락으로 조회
         Coupon coupon = couponRepository.findByCouponIdForUpdate(couponId)
                 .orElseThrow(() -> new CouponNotFoundException(ErrorCode.NOT_FOUND_COUPON));
 
-        // 2. 발급 수량 초과 여부 확인
-        if (coupon.getIssuedCount() >= coupon.getTotalCount()) {
-            return false;
-        }
-
-        // 3. 발급 수량 증가
+        // 2. 발급 수량 초과 여부 확인 & 발급 수량 증가
         coupon.increaseIssueAmount();
 
-        // 4. 발급 이력 저장
+        // 3. 발급 이력 저장
         IssueCoupon issueCoupon = IssueCoupon.builder()
                 .memberId(userId)
                 .couponId(couponId)
                 .build();
 
         issueCouponRepository.save(issueCoupon);
-        return true;
     }
 }
 
