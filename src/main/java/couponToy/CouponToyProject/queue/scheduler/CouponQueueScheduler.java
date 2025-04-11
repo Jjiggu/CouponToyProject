@@ -1,6 +1,5 @@
 package couponToy.CouponToyProject.queue.scheduler;
 
-import couponToy.CouponToyProject.CouponIssue.service.IssueCouponService;
 import couponToy.CouponToyProject.global.exception.CouponSoldOutException;
 import couponToy.CouponToyProject.queue.repository.CouponQueueRepository;
 import couponToy.CouponToyProject.queue.service.CouponQueueSchedulerService;
@@ -32,6 +31,7 @@ public class CouponQueueScheduler {
     // 한 번에 처리할 사용자 수 (예: 상위 5명)
     private static final long PROCESS_COUNT = 5;
     private static final String WAITING_KEY_PREFIX = "coupon:waiting:";
+    private static final String FAILED_KEY_PREFIX = "coupon:failed:";
 
     /**
      * 1초마다 실행하여, Redis에 저장된 모든 coupon:waiting:* 키를 동적으로 조회한 후,
@@ -39,20 +39,35 @@ public class CouponQueueScheduler {
      */
     @Scheduled(fixedDelay = 500)
     public void processQueue() {
-        Set<String> waitingKeys = getAllWaitingQueueKeys();
+        Set<String> waitingKeys = getAllQueueKeys(WAITING_KEY_PREFIX);
+
         if (waitingKeys.isEmpty()) {
             return;
         }
         for (String key : waitingKeys) {
-            Long couponId = extractCouponIdFromKey(key);
+            Long couponId = extractCouponIdFromKey(WAITING_KEY_PREFIX, key);
             processQueueForCoupon(couponId);
         }
     }
 
+    @Scheduled(fixedDelay = 1000)
+    public void processFailedQueue() {
+        Set<String> failedKeys = getAllQueueKeys(FAILED_KEY_PREFIX);
+
+        if (failedKeys.isEmpty()) {
+            return;
+        }
+        for (String key : failedKeys) {
+            Long couponId = extractCouponIdFromKey(FAILED_KEY_PREFIX, key);
+            processFailedQueueForCoupon(couponId);
+        }
+    }
+
+
     /**
      * SCAN 명령어를 사용해 모든 "coupon:waiting:*" 키를 조회한다.
      */
-    private Set<String> getAllWaitingQueueKeys() {
+    private Set<String> getAllQueueKeys(String prefix) {
         Set<String> keys = new HashSet<>();
         RedisConnectionFactory factory = redisTemplate.getConnectionFactory();
         if (factory == null) {
@@ -60,7 +75,7 @@ public class CouponQueueScheduler {
         }
         try (RedisConnection connection = factory.getConnection()) {
             ScanOptions scanOptions = ScanOptions.scanOptions()
-                    .match(WAITING_KEY_PREFIX + "*")
+                    .match(prefix + "*")
                     .count(1000)
                     .build();
             Cursor<byte[]> cursor = connection.scan(scanOptions);
@@ -74,13 +89,6 @@ public class CouponQueueScheduler {
         return keys;
     }
 
-    /**
-     * 대기열 키("coupon:waiting:{couponId}")에서 couponId를 추출한다.
-     */
-    private Long extractCouponIdFromKey(String key) {
-        String idPart = key.substring(WAITING_KEY_PREFIX.length());
-        return Long.valueOf(idPart);
-    }
 
     /**
      * 특정 쿠폰의 대기열에서 상위 PROCESS_COUNT명의 사용자를 조회하여 발급 처리를 시도한다.
@@ -102,20 +110,68 @@ public class CouponQueueScheduler {
             } catch (CouponSoldOutException e) {
                 // 발급 수량이 소진된 경우, 대기열을 전체 삭제(또는 다른 처리를 수행)
                 log.info("쿠폰 발급 수량 소진 - couponId: {}", couponId);
-                clearWaitingQueue(couponId);
+                clearQueue(WAITING_KEY_PREFIX, couponId);
                 break;
 
             } catch (Exception e) {
                 log.error("쿠폰 발급 처리 중 오류 발생 - couponId: {}, userId: {}", couponId, userIdStr, e);
+                Long userId = Long.valueOf(userIdStr);
+
+                couponQueueRepository.removeUserFromQueue(couponId, userId);
+                couponQueueRepository.addToFailedQueue(couponId, userId);
             }
         }
     }
 
+
+    /**
+     * 특정 쿠폰의 실패 큐에서 상위 PROCESS_COUNT_FAILED명의 사용자를 재처리합니다.
+     */
+    private void processFailedQueueForCoupon(Long couponId) {
+        Set<String> failedUserIds = couponQueueRepository.getTopFailedNUsers(couponId, PROCESS_COUNT);
+        if (failedUserIds == null || failedUserIds.isEmpty()) {
+            return;
+        }
+        for (String userIdStr : failedUserIds) {
+            try {
+                Long userId = Long.valueOf(userIdStr);
+
+                queueSchedulerService.issueFromQueue(couponId, userId);
+                // 재처리 성공 시 실패 큐에서 제거
+                couponQueueRepository.removeUserFromFailedQueue(couponId, userId);
+
+                log.info("재처리 성공 - couponId: {}, userId: {}", couponId, userId);
+            } catch (CouponSoldOutException e) {
+                // 발급 수량이 소진된 경우, 대기열을 전체 삭제(또는 다른 처리를 수행)
+                log.info("쿠폰 발급 수량 소진 - couponId: {}", couponId);
+                clearQueue(FAILED_KEY_PREFIX, couponId);
+                break;
+            } catch (Exception e) {
+                Long userId = Long.valueOf(userIdStr);
+
+                // TODO 반복 실패 CASE 처리 추가
+                couponQueueRepository.removeUserFromFailedQueue(couponId, userId);
+
+                log.error("재처리 실패 - couponId: {}, userId: {}. 에러: {}", couponId, userIdStr, e.getMessage(), e);
+            }
+        }
+    }
+
+
+    /**
+     * 대기열 키("coupon:waiting:{couponId}")에서 couponId를 추출한다.
+     */
+    private Long extractCouponIdFromKey(String prefix, String key) {
+        String idPart = key.substring(prefix.length());
+        return Long.valueOf(idPart);
+    }
+
+
     /**
      * 특정 쿠폰의 대기열 전체를 삭제한다.
      */
-    private void clearWaitingQueue(Long couponId) {
-        String key = WAITING_KEY_PREFIX + couponId;
+    private void clearQueue(String prefix, Long couponId) {
+        String key = prefix + couponId;
         redisTemplate.delete(key);
     }
 }
