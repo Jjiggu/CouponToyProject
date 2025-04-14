@@ -25,14 +25,14 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.Statement;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 @SpringBootTest
 public class CouponQueueServiceTest {
@@ -260,7 +260,7 @@ public class CouponQueueServiceTest {
 
     @Test
     @DisplayName("대기열 등록 후 스케줄러 발급 정상 처리")
-    void schedulerIssueFlowTest() throws InterruptedException {
+    void schedulerIssueFlowTest() {
 
         // given
         int userCount = 50;
@@ -276,7 +276,8 @@ public class CouponQueueServiceTest {
         }
 
         // when
-        Thread.sleep(3000);
+        await().atMost(10, TimeUnit.SECONDS)
+                .until(() -> couponQueueRepository.getTopNUsers(couponId, 1L).isEmpty());
 
         // then
         long issuedCount = issueCouponRepository.countByCouponId(couponId);
@@ -288,6 +289,7 @@ public class CouponQueueServiceTest {
         assertThat(issuedCount).isEqualTo(couponAmount);
         assertThat(redisIssuedSize).isEqualTo((long) couponAmount);
     }
+
 
 
     @Test
@@ -326,8 +328,10 @@ public class CouponQueueServiceTest {
             });
         }
 
-        Thread.sleep(10000);
-        latch.await(); // 모든 스레드 작업 종료 대기
+        latch.await();
+
+        await().atMost(10, TimeUnit.SECONDS)
+                .until(() -> couponQueueRepository.getTopNUsers(couponId, 1L).isEmpty());
 
         // then
         long issuedCount = issueCouponRepository.countByCouponId(couponId);
