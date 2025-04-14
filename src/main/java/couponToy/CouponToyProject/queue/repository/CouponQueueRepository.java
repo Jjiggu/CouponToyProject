@@ -1,5 +1,6 @@
 package couponToy.CouponToyProject.queue.repository;
 
+import couponToy.CouponToyProject.queue.util.RedisKeyUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -13,81 +14,66 @@ import java.util.Set;
 public class CouponQueueRepository {
 
     private final StringRedisTemplate redisTemplate;
-    private static final String WAITING_KEY_PREFIX = "coupon:waiting:";
-    private static final String ISSUED_KEY_PREFIX = "coupon:issued:";
-    private static final String FAILED_KEY_PREFIX = "coupon:failed:";
-
-
-    public String buildQueueKey(Long couponId) {
-        return WAITING_KEY_PREFIX + couponId;
-    }
-
-    private String buildIssuedKey(Long couponId) {
-        return ISSUED_KEY_PREFIX + couponId;
-    }
-
-    private String buildFailedKey(Long couponId) {
-        return FAILED_KEY_PREFIX + couponId;
-    }
 
     public void addToWaitingQueue(Long couponId, Long userId) {
-        String key = buildQueueKey(couponId);
+        String key = RedisKeyUtils.buildQueueKey(couponId);
         double score = System.currentTimeMillis();
         redisTemplate.opsForZSet().add(key, String.valueOf(userId), score);
     }
 
 
     public void addToFailedQueue(Long couponId, Long userId) {
-        String key = buildFailedKey(couponId);
+        String key = RedisKeyUtils.buildFailedKey(couponId);
         double score = System.currentTimeMillis();
         redisTemplate.opsForZSet().add(key, String.valueOf(userId), score);
     }
 
 
     public Long getUserRank(Long couponId, Long userId) {
-        String key = buildQueueKey(couponId);
-        return redisTemplate.opsForZSet().rank(key, String.valueOf(userId));
+        String key = RedisKeyUtils.buildQueueKey(couponId);
+
+        try {
+            Long rank = redisTemplate.opsForZSet().rank(key, String.valueOf(userId));
+            return rank != null ? rank : -1L;
+        } catch (Exception e) {
+            log.error("사용자 순위 조회 중 오류 발생: {}", e.getMessage(), e);
+            throw new RuntimeException("Redis 작업 실패", e);
+        }
     }
 
 
     public Set<String> getTopNUsers(Long couponId, Long count) {
-        String key = buildQueueKey(couponId);
+        String key = RedisKeyUtils.buildQueueKey(couponId);
         return redisTemplate.opsForZSet().range(key, 0, count - 1);
     }
 
 
     public Set<String> getTopFailedNUsers(Long couponId, Long count) {
-        String key = buildFailedKey(couponId);
+        String key = RedisKeyUtils.buildFailedKey(couponId);
         return redisTemplate.opsForZSet().range(key, 0, count - 1);
     }
 
 
     public void removeUserFromQueue(Long couponId, Long userId) {
-        String key = buildQueueKey(couponId);
+        String key = RedisKeyUtils.buildQueueKey(couponId);
         redisTemplate.opsForZSet().remove(key, String.valueOf(userId));
     }
 
 
     public void removeUserFromFailedQueue(Long couponId, Long userId) {
-        String key = buildFailedKey(couponId);
+        String key = RedisKeyUtils.buildFailedKey(couponId);
         redisTemplate.opsForZSet().remove(key, String.valueOf(userId));
     }
 
 
     public void addToIssuedSet(Long couponId, Long userId) {
-        String key = buildIssuedKey(couponId);
-        redisTemplate.opsForZSet().add(key, String.valueOf(userId), System.currentTimeMillis());
-    }
-
-
-    public void addToFailedSet(Long couponId, Long userId) {
-        String key = buildFailedKey(couponId);
+        String key = RedisKeyUtils.buildIssuedKey(couponId);
         redisTemplate.opsForZSet().add(key, String.valueOf(userId), System.currentTimeMillis());
     }
 
 
     public boolean isAlreadyIssued(Long couponId, Long userId) {
-        String key = buildIssuedKey(couponId);
+        String key = RedisKeyUtils.buildIssuedKey(couponId);
         Double score = redisTemplate.opsForZSet().score(key, String.valueOf(userId));
 
         log.debug("check issued - userId: {}, score: {}", userId, score);
@@ -97,7 +83,7 @@ public class CouponQueueRepository {
 
 
     public Long getQueueSize(Long couponId) {
-        String key = buildQueueKey(couponId);
+        String key = RedisKeyUtils.buildIssuedKey(couponId);
         return redisTemplate.opsForZSet().size(key);
     }
 }

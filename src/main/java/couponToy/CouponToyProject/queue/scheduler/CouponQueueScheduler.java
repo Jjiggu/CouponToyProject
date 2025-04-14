@@ -3,6 +3,7 @@ package couponToy.CouponToyProject.queue.scheduler;
 import couponToy.CouponToyProject.global.exception.CouponSoldOutException;
 import couponToy.CouponToyProject.queue.repository.CouponQueueRepository;
 import couponToy.CouponToyProject.queue.service.CouponQueueSchedulerService;
+import couponToy.CouponToyProject.queue.util.RedisKeyUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.connection.RedisConnection;
@@ -162,8 +163,7 @@ public class CouponQueueScheduler {
      * 대기열 키("coupon:waiting:{couponId}")에서 couponId를 추출한다.
      */
     private Long extractCouponIdFromKey(String prefix, String key) {
-        String idPart = key.substring(prefix.length());
-        return Long.valueOf(idPart);
+        return RedisKeyUtils.extractCouponIdFromKey(prefix, key);
     }
 
 
@@ -171,7 +171,9 @@ public class CouponQueueScheduler {
      * 특정 쿠폰의 대기열 전체를 삭제한다.
      */
     private void clearQueue(String prefix, Long couponId) {
-        String key = prefix + couponId;
+        String key = prefix.equals(RedisKeyUtils.WAITING_KEY_PREFIX) ?
+                RedisKeyUtils.buildQueueKey(couponId)
+                : RedisKeyUtils.buildFailedKey(couponId);
         redisTemplate.delete(key);
     }
 }
