@@ -101,6 +101,5 @@
 
 
 ## 📐 ERD 설계도
-
-<img width="984" alt="image" src="https://github.com/user-attachments/assets/f61056de-aedc-4849-8d29-4ce59c9e609c">
+<img width="694" alt="image" src="https://github.com/user-attachments/assets/f1c895d8-1db4-40fa-8cb2-9b7b28584623">
 
