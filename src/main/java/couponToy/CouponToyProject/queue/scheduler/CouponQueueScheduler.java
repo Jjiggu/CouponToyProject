@@ -38,7 +38,7 @@ public class CouponQueueScheduler {
      * 1초마다 실행하여, Redis에 저장된 모든 coupon:waiting:* 키를 동적으로 조회한 후,
      * 각 쿠폰 대기열에 대해 상위 PROCESS_COUNT명의 사용자에 대해 발급 처리를 시도한다.
      */
-    @Scheduled(fixedDelay = 500)
+    @Scheduled(fixedDelay = 1000)
     public void processQueue() {
         Set<String> waitingKeys = getAllQueueKeys(WAITING_KEY_PREFIX);
 
