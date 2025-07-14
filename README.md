@@ -8,7 +8,49 @@
 
 ## 🏗 아키텍처
 
-## 추후 업로드 예정
+```mermaid
+sequenceDiagram
+    participant U as 사용자
+    participant C as CouponQueueController
+    participant S as CouponQueueService
+    participant R as CouponQueueRepository
+    participant Redis as Redis 서버
+
+    U->>C: POST /api/queue/coupon/{couponId}
+    C->>S: registerUser(couponId, userId)
+    S->>R: validatedNotIssued(couponId, userId)
+    R->>Redis: isAlreadyIssued 체크
+    alt 이미 발급됨
+        R-->>S: true 반환
+        S-->>C: 예외 발생 (IsAlreadyIssued)
+    else 미발급 상태
+        R->>Redis: addToWaitingQueue(couponId, userId)
+        R->>Redis: 사용자 순위 확인
+        R-->>S: 순위 반환
+        S-->>C: 사용자 순위 포함 응답
+    end
+    C-->>U: 201 Created 및 순위 안내 메시지
+```
+
+```mermaid
+sequenceDiagram
+    participant Sched as CouponQueueScheduler
+    participant Redis as Redis 서버
+    participant R as CouponQueueRepository
+    participant S as CouponQueueService
+
+    Sched->>Redis: SCAN coupon:waiting:* 키 조회
+    Redis-->>Sched: 대기열 키 목록 반환
+    loop 각 대기열 처리
+        Sched->>R: getTopNUsers(couponId)
+        R->>Redis: 대기열 큐에서 상위 사용자 조회
+        R-->>Sched: 사용자 목록 반환
+        Sched->>S: processQueueForCoupon(couponId)
+        S-->>R: 쿠폰 발급 처리 및 issuedSet 업데이트
+    end
+    Sched->>Redis: 필요 시 대기열 정리
+```
+
 
 <br>
 
