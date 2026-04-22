@@ -2,7 +2,11 @@ package couponToy.CouponToyProject.global.exception.handler;
 
 import couponToy.CouponToyProject.global.api.ApiUtils;
 import couponToy.CouponToyProject.global.constant.ErrorCode;
+import couponToy.CouponToyProject.global.exception.CouponNotFoundException;
+import couponToy.CouponToyProject.global.exception.CouponSoldOutException;
 import couponToy.CouponToyProject.global.exception.DuplicateMemberException;
+import couponToy.CouponToyProject.global.exception.IsAlreadyIssued;
+import couponToy.CouponToyProject.global.exception.MemberNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
@@ -21,16 +25,36 @@ public class GlobalControllerAdvice {
 
     private final MessageSource messageSource;
 
-    @ExceptionHandler({
-            DuplicateMemberException.class
-    })
-    public ResponseEntity<?> handleCustomException(RuntimeException ex) {
+    @ExceptionHandler({DuplicateMemberException.class, IsAlreadyIssued.class})
+    public ResponseEntity<?> handleBadRequestException(RuntimeException ex) {
         log.error("handling : {}, message : {}", ex.getClass().toString(), ex.getMessage());
 
         return ResponseEntity
                 .badRequest()
                 .body(
                         ApiUtils.error(ex.getMessage(), HttpStatus.BAD_REQUEST)
+                );
+    }
+
+    @ExceptionHandler(CouponSoldOutException.class)
+    public ResponseEntity<?> handleCouponSoldOutException(CouponSoldOutException ex) {
+        log.error("handling : {}, message : {}", ex.getClass().toString(), ex.getMessage());
+
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(
+                        ApiUtils.error(ex.getMessage(), HttpStatus.CONFLICT)
+                );
+    }
+
+    @ExceptionHandler({CouponNotFoundException.class, MemberNotFoundException.class})
+    public ResponseEntity<?> handleNotFoundException(RuntimeException ex) {
+        log.error("handling : {}, message : {}", ex.getClass().toString(), ex.getMessage());
+
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(
+                        ApiUtils.error(ex.getMessage(), HttpStatus.NOT_FOUND)
                 );
     }
 

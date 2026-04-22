@@ -4,6 +4,7 @@ import com.auth0.jwt.JWT;
 import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import couponToy.CouponToyProject.global.constant.Role;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -14,8 +15,12 @@ import java.util.List;
 @Service
 public class JwtService {
 
-    private static final String SECRET_KEY = "secret_key";
+    private final String secretKey;
     private static final Duration ACCESS_DURATION = Duration.of(7, ChronoUnit.DAYS);
+
+    public JwtService(@Value("${jwt.secret-key}") String secretKey) {
+        this.secretKey = secretKey;
+    }
 
     public String issue(Long id, String email, Role role) {
         return JWT.create()
@@ -23,11 +28,11 @@ public class JwtService {
                 .withClaim("email", email)
                 .withClaim("roles", List.of(role.name()))
                 .withExpiresAt(Instant.now().plus(ACCESS_DURATION))
-                .sign(Algorithm.HMAC256(SECRET_KEY));
+                .sign(Algorithm.HMAC256(secretKey));
     }
 
     public DecodedJWT decode(String token) {
-        return JWT.require(Algorithm.HMAC256(SECRET_KEY))
+        return JWT.require(Algorithm.HMAC256(secretKey))
                 .build()
                 .verify(token);
     }

@@ -5,6 +5,7 @@ import couponToy.CouponToyProject.Coupon.dto.CouponCreateResponse;
 import couponToy.CouponToyProject.Coupon.dto.CouponReadResponse;
 import couponToy.CouponToyProject.Coupon.model.Coupon;
 import couponToy.CouponToyProject.Coupon.repository.CouponRepository;
+import couponToy.CouponToyProject.CouponIssue.repository.CouponIssuedRedisRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,11 +15,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class CouponService {
 
     private final CouponRepository couponRepository;
+    private final CouponIssuedRedisRepository couponIssuedRedisRepository;
 
     @Transactional
     public CouponCreateResponse createCoupon(CouponCreateRequest couponCreateRequest) {
 
         Coupon coupon = couponRepository.save(couponCreateRequest.toEntity());
+        couponIssuedRedisRepository.setTotalCount(coupon.getCouponId(), coupon.getTotalCount());
 
         return CouponCreateResponse.fromEntity(coupon);
     }

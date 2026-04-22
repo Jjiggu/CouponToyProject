@@ -13,11 +13,14 @@ import couponToy.CouponToyProject.Member.dto.MemberSignUpResponse;
 import couponToy.CouponToyProject.Member.model.Member;
 import couponToy.CouponToyProject.Member.repository.MemberRepository;
 import couponToy.CouponToyProject.Member.service.MemberService;
+import couponToy.CouponToyProject.global.exception.IsAlreadyIssued;
 import couponToy.CouponToyProject.global.security.MemberDetails;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -29,6 +32,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 
 @SpringBootTest
 //@Transactional
@@ -51,6 +55,14 @@ public class IssueCouponServiceTest {
 
     @Autowired
     private MemberService memberService;
+
+    @Autowired
+    private StringRedisTemplate redisTemplate;
+
+    @AfterEach
+    void clearRedis() {
+        redisTemplate.delete(redisTemplate.keys("coupon:issued:*"));
+    }
 
     /**
      *  회원 생성 및 SecurityContext 설정
@@ -257,5 +269,23 @@ public class IssueCouponServiceTest {
         assertThat(successCount.get()).isEqualTo((int) issuedCoupons);
         assertThat(successCount.get() + failCount.get()).isEqualTo(threadCount);
         assertThat(failCount.get()).isEqualTo(threadCount - couponAmount);
+    }
+
+
+    @Test
+    @DisplayName("동일 사용자가 동일 쿠폰을 두 번 발급 시도하면 IsAlreadyIssued 예외 발생")
+    void duplicateIssuePreventionTest() {
+        // given
+        Coupon coupon = createTestCoupon(10);
+        Member member = createTestMember();
+        IssueCouponRequest request = new IssueCouponRequest(member.getMemberId(), coupon.getCouponId());
+        MemberDetails memberDetails = (MemberDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+        // when - 첫 번째 발급 성공
+        issueCouponService.issueCoupon(request, memberDetails, coupon.getCouponId());
+
+        // then - 두 번째 발급 시 예외
+        assertThatThrownBy(() -> issueCouponService.issueCoupon(request, memberDetails, coupon.getCouponId()))
+                .isInstanceOf(IsAlreadyIssued.class);
     }
 }
