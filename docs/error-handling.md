@@ -24,10 +24,10 @@ RuntimeException
 |---|---|---|
 | `DUPLICATE_EMAIL` | 이미 존재하는 이메일입니다 | 회원가입 이메일 중복 |
 | `NOT_FOUND_MEMBER` | 일치하는 회원정보가 없습니다. | 발급 시 회원 조회 실패 |
-| `NOT_FOUND_COUPON` | 일치하는 쿠폰정보가 없습니다. 쿠폰 번호를 확인해주세요 | 발급 시 쿠폰 조회 실패 |
+| `NOT_FOUND_COUPON` | 일치하는 쿠폰정보가 없습니다. 쿠폰 번호를 확인해주세요 | 발급 시 또는 조회 시 쿠폰 조회 실패 |
 | `COUPON_SOLD_OUT` | 쿠폰이 모두 소진되었습니다. | Redis 수량 초과 또는 DB increaseIssueAmount |
 | `IS_ALREADY_ISSUED` | 이미 쿠폰 발급 받은 사용자입니다. | Redis SADD 결과 0 |
-| `UNAUTHORIZED` | 인증 오류 | JWT 없음 / 만료 / 검증 실패 |
+| `UNAUTHORIZED` | 인증 오류 | JWT 없음 / 만료 / 검증 실패 또는 로그인 인증 실패 |
 | `NO_HANDLER_FOUND` | 존재하지 않는 URL | 잘못된 경로 |
 | `HTTP_REQUEST_METHOD_NOT_SUPPORTED` | 지원되지 않는 요청 메소드 | 잘못된 HTTP 메서드 |
 | `INTERNAL_SERVER_ERROR` | Internal Server Error | 그 외 모든 예외 |
@@ -80,6 +80,8 @@ RuntimeException
   "error": { "message": "인증 오류", "status": 401 }
 }
 ```
+
+`/members/login` 에서 발생하는 인증 실패와 보호된 경로의 미인증 접근은 모두 동일한 401 응답 포맷을 사용한다.
 
 ---
 

@@ -11,6 +11,7 @@ Redis를 1차 게이트, DB 비관적 락을 최종 안전장치로 사용하는
 클라이언트
     │  POST /coupons/issue/{couponId}
     │  Authorization: Bearer {token}
+    │  Body: optional
     ▼
 JwtAuthenticationFilter         JWT 검증 → SecurityContextHolder 설정
     │
@@ -117,7 +118,7 @@ Coupon coupon = couponRepository.findByCouponIdForUpdate(couponId).orElseThrow(.
 // → SELECT * FROM coupons WHERE coupon_id = ? FOR UPDATE
 
 coupon.increaseIssueAmount(); // 수량 초과 시 CouponSoldOutException
-issueCouponRepository.save(issueCouponRequest.toEntity(member, coupon));
+issueCouponRepository.save(new IssueCoupon(member, coupon));
 // → INSERT INTO coupon_issues ...
 ```
 
@@ -229,7 +230,7 @@ DB 커넥션은 첫 번째 DB 접근(`findById`) 시점에 획득된다.
 ### 쿠폰 생성
 
 ```
-POST /api/coupons
+POST /coupons
   Body: { name, totalCount }
 
   CouponService.createCoupon()
@@ -243,7 +244,7 @@ POST /api/coupons
 ### 쿠폰 조회
 
 ```
-GET /api/coupons/{couponId}
+GET /coupons/{couponId}
 
   CouponService.findCouponById()
     couponRepository.findById(couponId)

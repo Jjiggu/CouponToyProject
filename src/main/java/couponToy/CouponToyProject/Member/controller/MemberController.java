@@ -31,7 +31,7 @@ public class MemberController {
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody @Valid MemberLogInRequest memberLogInRequest) {
         return ResponseEntity
-                .status(HttpStatus.CREATED)
+                .ok()
                 .body(
                     ApiUtils.success(
                             memberService.login(memberLogInRequest)

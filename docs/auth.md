@@ -20,7 +20,7 @@ POST /members/signup
          [2] BCryptPasswordEncoder.encode(password)
                평문 비밀번호를 해시로 변환
          [3] memberRepository.save(member)
-               members 테이블 INSERT, role = USER 고정
+               members 테이블 INSERT, role = MEMBER 고정
          [4] MemberSignUpResponse 반환
 ```
 
@@ -43,7 +43,7 @@ POST /members/signup
     "memberId": 1,
     "email": "user@example.com",
     "name": "홍길동",
-    "role": "USER"
+    "role": "MEMBER"
   },
   "error": null
 }
@@ -76,10 +76,10 @@ POST /members/login
                └─ BCryptPasswordEncoder.matches(입력PW, 저장해시)
                실패 → AuthenticationException → 401
          [2] JwtService.issue(memberId, email, role)
-               알고리즘: HMAC256("secret_key")
+               알고리즘: HMAC256(jwt.secret-key)
                만료:     발급 시각 + 7일
-               클레임:   sub=memberId, email, roles=["USER"]
-         [3] MemberLogInResponse 반환 { memberId, email, token }
+               클레임:   sub=memberId, email, roles=["MEMBER"]
+         [3] MemberLogInResponse 반환 { memberId, email, name, accessToken }
 ```
 
 ### 요청 / 응답
@@ -99,7 +99,8 @@ POST /members/login
   "response": {
     "memberId": 1,
     "email": "user@example.com",
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    "name": "홍길동",
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
   },
   "error": null
 }
@@ -158,7 +159,7 @@ HTTP Request
 |---|---|---|
 | `sub` | "1" | 회원 PK (String) |
 | `email` | "user@example.com" | 이메일 |
-| `roles` | ["USER"] | 권한 목록 |
+| `roles` | ["MEMBER"] | 권한 목록 |
 | `exp` | Unix timestamp | 만료 시각 (발급 + 7일) |
 
 ---
@@ -177,4 +178,4 @@ Form login    : disabled
 | `POST /members/login` | 불필요 (permitAll) |
 | 그 외 모든 경로 | 필요 (authenticated) |
 
-인증 실패 시 `UnauthorizedHandler`가 401 응답을 반환한다.
+인증 실패 시 `UnauthorizedHandler`가 `ApiResult` 형태의 401 응답을 반환한다.

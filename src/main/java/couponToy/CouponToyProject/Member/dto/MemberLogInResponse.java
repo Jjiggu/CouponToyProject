@@ -12,7 +12,6 @@ public class MemberLogInResponse {
 
     private Long memberId;
     private String email;
-    private String password;
     private String name;
     private String accessToken;
 
@@ -21,7 +20,6 @@ public class MemberLogInResponse {
         return MemberLogInResponse.builder()
                 .memberId(member.getMemberId())
                 .email(member.getEmail())
-                .password(member.getPassword())
                 .name(member.getName())
                 .accessToken(token)
                 .build();

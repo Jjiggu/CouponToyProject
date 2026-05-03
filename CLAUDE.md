@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-선착순 쿠폰 발급 처리 토이 프로젝트. Spring Boot + MySQL + Redis(Sorted Set) 기반으로 고동시성 쿠폰 발급 대기열을 구현한다.
+선착순 쿠폰 발급 처리 토이 프로젝트. Spring Boot + MySQL + Redis(SET) 기반으로 고동시성 쿠폰 발급을 구현한다.
 
 ## Commands
 
@@ -17,19 +17,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Tests
 ```bash
 ./gradlew test                                          # 전체 테스트 실행
-./gradlew test --tests "*.CouponQueueServiceTest"       # 특정 테스트 클래스 실행
-./gradlew test --tests "*.CouponQueueServiceTest.schedulerIssueFlowTest"  # 단일 테스트 실행
+./gradlew test --tests "*.IssueCouponServiceTest"       # 특정 테스트 클래스 실행
+./gradlew test --tests "*.IssueCouponServiceTest.duplicateIssuePreventionTest"  # 단일 테스트 실행
 ```
 
 > 통합 테스트(`@SpringBootTest`)는 MySQL과 Redis가 로컬에서 실행 중이어야 한다.
+> 현재 `refactor/#26-architecture-refactoring` 브랜치의 테스트 코드는 리팩토링 이전 기준일 수 있다.
 
 ### Infrastructure (Docker)
 ```bash
 # src/main/resources/docker-compose.yml 기준
-docker-compose -f src/main/resources/docker-compose.yml up -d
+docker compose -f src/main/resources/docker-compose.yml up -d
 ```
-- MySQL: `localhost:3307` (컨테이너 내부 3306)
-- Redis: `localhost:6379` (별도 실행 필요)
+- MySQL: `localhost:3306`
+- Redis: `localhost:6379`
 
 ### Docker Image Build
 ```bash
@@ -52,9 +53,10 @@ docker build -t docker-coupon .
 |---|---|---|
 | POST | `/members/signup` | 회원가입 (인증 불필요) |
 | POST | `/members/login` | 로그인 → JWT 반환 (인증 불필요) |
-| POST | `/api/coupons` | 쿠폰 생성 |
-| GET | `/api/coupons/{couponId}` | 쿠폰 조회 |
+| POST | `/coupons` | 쿠폰 생성 |
+| GET | `/coupons/{couponId}` | 쿠폰 조회 |
 | POST | `/coupons/issue/{couponId}` | 쿠폰 발급 |
+| POST | `/coupons/issue/pessimistic/{couponId}` | 비교용 비관적 락 발급 |
 
 ### Coupon Issue Flow (핵심)
 

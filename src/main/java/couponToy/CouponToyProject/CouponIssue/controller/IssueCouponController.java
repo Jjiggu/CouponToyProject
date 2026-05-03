@@ -65,4 +65,46 @@ public class IssueCouponController {
                         )
                 );
     }
+
+    @PostMapping("issue/{couponId}/pessimistic")
+    public ResponseEntity<?> issueCouponWithPessimisticLockForPerformanceTest(
+            @AuthenticationPrincipal MemberDetails memberDetails,
+            @PathVariable Long couponId) {
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(
+                        ApiUtils.success(
+                                pessimisticIssueCouponService.issueCoupon(memberDetails, couponId)
+                        )
+                );
+    }
+
+    @PostMapping("issue/{couponId}/redis-transactional")
+    public ResponseEntity<?> issueCouponWithRedisTransactionalForPerformanceTest(
+            @AuthenticationPrincipal MemberDetails memberDetails,
+            @PathVariable Long couponId) {
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(
+                        ApiUtils.success(
+                                issueCouponService.issueCoupon(memberDetails, couponId)
+                        )
+                );
+    }
+
+    @PostMapping("issue/{couponId}/redis-event")
+    public ResponseEntity<?> issueCouponWithRedisEventForPerformanceTest(
+            @AuthenticationPrincipal MemberDetails memberDetails,
+            @PathVariable Long couponId) {
+
+        return ResponseEntity
+                .status(HttpStatus.ACCEPTED)
+                .body(
+                        ApiUtils.success(
+                                eventIssueCouponService.issueCoupon(memberDetails, couponId)
+                        )
+                );
+    }
 }

@@ -13,15 +13,22 @@ import lombok.experimental.SuperBuilder;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @SuperBuilder
-@Table(name = "coupon_issues")
+@Table(
+        name = "coupon_issues",
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_coupon_issue_coupon_member", columnNames = {"coupon_id", "member_id"})
+        }
+)
 public class IssueCoupon extends BaseTimeEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long issuedId;
 
+    @Column(name = "member_id", nullable = false)
     private Long memberId;
 
+    @Column(name = "coupon_id", nullable = false)
     private Long couponId;
 
     public IssueCoupon(Member member, Coupon coupon) {

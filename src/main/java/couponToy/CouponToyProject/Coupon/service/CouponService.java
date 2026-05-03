@@ -6,6 +6,8 @@ import couponToy.CouponToyProject.Coupon.dto.CouponReadResponse;
 import couponToy.CouponToyProject.Coupon.model.Coupon;
 import couponToy.CouponToyProject.Coupon.repository.CouponRepository;
 import couponToy.CouponToyProject.CouponIssue.repository.CouponIssuedRedisRepository;
+import couponToy.CouponToyProject.global.constant.ErrorCode;
+import couponToy.CouponToyProject.global.exception.CouponNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,7 +32,7 @@ public class CouponService {
     public CouponReadResponse findCouponById(Long couponId) {
 
         Coupon coupon = couponRepository.findById(couponId)
-                .orElseThrow(IllegalAccessError::new);
+                .orElseThrow(() -> new CouponNotFoundException(ErrorCode.NOT_FOUND_COUPON));
 
         return CouponReadResponse.fromEntity(coupon);
 

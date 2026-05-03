@@ -35,6 +35,21 @@
 
 ---
 
+## 실행 설정
+
+기본 실행 설정은 `src/main/resources/application.yml` 에 정의돼 있다.
+
+| 항목 | 기본값 |
+|---|---|
+| MySQL URL | `jdbc:mysql://localhost:3306/CouponToyProject` |
+| MySQL 계정 | `root` |
+| Redis | `localhost:6379` |
+| JPA DDL | `update` |
+
+통합 테스트는 `src/test/resources/application.yml` 을 사용하며 `CouponToyProject_test` DB를 바라보도록 분리했다. 다만 현재 리팩토링 브랜치의 테스트 코드는 최신 구조 기준이 아니다.
+
+---
+
 ## 도메인 구조
 
 ```
@@ -64,7 +79,7 @@ couponToy.CouponToyProject
 | email | VARCHAR NOT NULL | 로그인 ID (unique) |
 | password | VARCHAR NOT NULL | BCrypt 해시 |
 | name | VARCHAR NOT NULL | |
-| role | VARCHAR NOT NULL | USER |
+| role | VARCHAR NOT NULL | MEMBER / ADMIN |
 | created_at | DATETIME | |
 | updated_at | DATETIME | |
 
@@ -100,7 +115,7 @@ couponToy.CouponToyProject
 
 ### 캐시 웜업 전략
 
-`coupon:total:{couponId}` 는 쿠폰 생성(`POST /api/coupons`) 시점에 DB 저장과 함께 Redis에 SET된다.
+`coupon:total:{couponId}` 는 쿠폰 생성(`POST /coupons`) 시점에 DB 저장과 함께 Redis에 SET된다.
 
 ```
 쿠폰 생성
@@ -120,9 +135,10 @@ Redis 재시작 등으로 키가 사라지면, 발급 요청 시 DB에서 읽어
 |---|---|---|---|
 | POST | `/members/signup` | 불필요 | Member |
 | POST | `/members/login` | 불필요 | Member |
-| POST | `/api/coupons` | 필요 | Coupon |
-| GET | `/api/coupons/{couponId}` | 필요 | Coupon |
+| POST | `/coupons` | 필요 | Coupon |
+| GET | `/coupons/{couponId}` | 필요 | Coupon |
 | POST | `/coupons/issue/{couponId}` | 필요 | CouponIssue |
+| POST | `/coupons/issue/pessimistic/{couponId}` | 필요 | CouponIssue |
 
 ---
 

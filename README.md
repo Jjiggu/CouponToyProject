@@ -19,13 +19,26 @@
 
 ## 실행 방법
 
+기본 설정은 [`src/main/resources/application.yml`](./src/main/resources/application.yml) 에 들어 있다.
+
+- MySQL: `localhost:3306`
+- Redis: `localhost:6379`
+- DB 이름: `CouponToyProject`
+- DB 계정: 로컬 `root`
+
+`src/test/resources/application.yml` 은 분리된 `CouponToyProject_test` DB를 바라보도록 잡아뒀다.
+
 **인프라 실행**
+Docker daemon 이 켜져 있어야 한다.
 
 ```bash
-# MySQL (localhost:3307)
-docker-compose -f src/main/resources/docker-compose.yml up -d
+docker compose up -d mysql redis
+```
 
-# Redis (localhost:6379) — 별도 실행
+스프링 서버, Prometheus, Grafana까지 같은 제한 자원으로 올리려면 아래처럼 실행한다.
+
+```bash
+docker compose up -d --build
 ```
 
 **애플리케이션 실행**
@@ -41,17 +54,24 @@ docker-compose -f src/main/resources/docker-compose.yml up -d
 ./gradlew test --tests "*.IssueCouponServiceTest"
 ```
 
+`k6` 성능 테스트처럼 재현 가능한 환경이 필요하면 Compose로 MySQL, Redis, 앱을 함께 띄우는 방식을 권장한다.
+
 ## API
 
 | Method | Path | 인증 | 설명 |
 |---|---|---|---|
 | POST | `/members/signup` | 불필요 | 회원가입 |
 | POST | `/members/login` | 불필요 | 로그인 → JWT 반환 |
-| POST | `/api/coupons` | 필요 | 쿠폰 생성 |
-| GET | `/api/coupons/{couponId}` | 필요 | 쿠폰 조회 |
-| POST | `/coupons/issue/{couponId}` | 필요 | 쿠폰 발급 |
+| POST | `/coupons` | 필요 | 쿠폰 생성 |
+| GET | `/coupons/{couponId}` | 필요 | 쿠폰 조회 |
+| POST | `/coupons/issue/{couponId}` | 필요 | 기존 Redis Transactional 쿠폰 발급 |
+| POST | `/coupons/issue/pessimistic/{couponId}` | 필요 | 기존 비교용 비관적 락 발급 |
+| POST | `/coupons/issue/{couponId}/pessimistic` | 필요 | 성능 테스트용 비관적 락 발급 |
+| POST | `/coupons/issue/{couponId}/redis-transactional` | 필요 | 성능 테스트용 Redis Transactional 발급 |
+| POST | `/coupons/issue/{couponId}/redis-event` | 필요 | 성능 테스트용 Redis + Spring Event 비동기 발급 |
 
 인증이 필요한 요청은 `Authorization: Bearer {token}` 헤더를 포함한다.
+`POST /coupons/issue/{couponId}` 는 요청 바디 없이 호출할 수 있다.
 
 모든 응답은 아래 형태로 반환된다.
 
@@ -72,7 +92,7 @@ POST /coupons/issue/{couponId}
       SCARD coupon:issued:{couponId}             현재 발급 수
       SADD  coupon:issued:{couponId}  {userId}   중복 등록 시도
       ─────────────────────────────────────────
-      SADD == 0          → 400 IsAlreadyIssued   (DB 미접근)
+      SADD == 0          → 409 IsAlreadyIssued   (DB 미접근)
       SCARD >= totalCount → 409 CouponSoldOut    (SREM 후 예외)
 
   [3] SELECT ... FOR UPDATE (PESSIMISTIC_WRITE)
@@ -97,3 +117,12 @@ POST /coupons/issue/{couponId}
 - [docs/auth.md](./docs/auth.md) — 인증 플로우
 - [docs/coupon-issue.md](./docs/coupon-issue.md) — 쿠폰 발급 플로우 상세
 - [docs/error-handling.md](./docs/error-handling.md) — 예외 처리
+- [docs/test-guide.md](./docs/test-guide.md) — 테스트 실행 순서와 결과 확인 방법
+- [docs/performance/coupon-issue-comparison.md](./docs/performance/coupon-issue-comparison.md) — `k6` 성능 비교 가이드
+- [docs/performance/monitoring-guide.md](./docs/performance/monitoring-guide.md) — Grafana/Prometheus 모니터링 가이드
+- [docs/performance/max-tps-guide.md](./docs/performance/max-tps-guide.md) — 최대 TPS 측정 가이드
+- [docs/performance/max-tps-results.md](./docs/performance/max-tps-results.md) — 최대 TPS 측정 결과와 해석
+
+## Coupon Performance Test Docs
+
+쿠폰 발급 성능/부하 테스트 문서는 [docs/coupon-performance-test](docs/coupon-performance-test/README.md)에 정리되어 있습니다.

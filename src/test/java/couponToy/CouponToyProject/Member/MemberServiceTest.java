@@ -1,18 +1,18 @@
 package couponToy.CouponToyProject.Member;
 
+import couponToy.CouponToyProject.Member.dto.MemberSignUpRequest;
 import couponToy.CouponToyProject.Member.model.Member;
 import couponToy.CouponToyProject.Member.repository.MemberRepository;
 import couponToy.CouponToyProject.Member.service.MemberService;
-import couponToy.CouponToyProject.global.constant.Role;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.transaction.annotation.Transactional;
 
 import static org.assertj.core.api.Assertions.*;
 
-@DataJpaTest
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@SpringBootTest
+@Transactional
 public class MemberServiceTest {
 
     @Autowired
@@ -24,22 +24,22 @@ public class MemberServiceTest {
     void 회원가입() {
 
         //Given
-        Member request = Member.builder()
+        MemberSignUpRequest request = MemberSignUpRequest.builder()
                 .email("test@test.com")
                 .password("test123!@")
                 .name("테스트유저")
-                .role(Role.MEMBER)
                 .build();
 
         //When
-        Member signUpMember = memberRepository.save(request);
-//        Member savedMember = memberService.signUpMember();
+        Long memberId = memberService.signUpMember(request).getMemberId();
+        Member signUpMember = memberRepository.findById(memberId).orElseThrow();
 
         //Then
         assertThat(signUpMember.getMemberId()).isNotNull();
         assertThat(signUpMember.getEmail()).isEqualTo("test@test.com");
         assertThat(signUpMember.getName()).isEqualTo("테스트유저");
-        assertThat(signUpMember.getRole()).isEqualTo(Role.MEMBER);
+        assertThat(signUpMember.getRole().name()).isEqualTo("MEMBER");
+        assertThat(signUpMember.getPassword()).isNotEqualTo("test123!@");
 
     }
 }

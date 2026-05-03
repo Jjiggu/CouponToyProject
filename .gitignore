@@ -10,8 +10,13 @@ src/test/resources/application.yml
 src/test/resources/application-*.yml
 src/test/resources/docker-compose.yml
 src/main/resources/docker-compose.yml
+monitoring/grafana/provisioning/datasources/mysql.yml
 !Dockerfile
+!/docker-compose.yml
 perf/results/*
+performance/data/
+performance/results/*.json
+!performance/results/.gitkeep
 !perf/results/.gitkeep
 !perf/results/manual/
 !perf/results/manual/.gitkeep

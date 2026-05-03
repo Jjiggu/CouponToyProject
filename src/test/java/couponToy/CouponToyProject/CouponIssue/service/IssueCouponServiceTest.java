@@ -26,6 +26,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -69,7 +70,7 @@ public class IssueCouponServiceTest {
      */
     private Member createTestMember() {
         MemberSignUpRequest signUpRequest = MemberSignUpRequest.builder()
-                .email("test@example.com")
+                .email("test-" + UUID.randomUUID() + "@example.com")
                 .password("test1234!@")
                 .name("발급테스트유저")
                 .build();
@@ -88,7 +89,7 @@ public class IssueCouponServiceTest {
 
     private Member createMultiTestMember(int index) {
         MemberSignUpRequest signUpRequest = MemberSignUpRequest.builder()
-                .email("test" + index + "@example.com") // 인덱스로 유니크 처리
+                .email("test" + index + "-" + UUID.randomUUID() + "@example.com") // 인덱스와 UUID로 유니크 처리
                 .password("test1234!@")
                 .name("발급테스트유저" + index)
                 .build();
@@ -171,7 +172,7 @@ public class IssueCouponServiceTest {
         // then
 //        long issuedCoupons = issueCouponRepository.countByCoupon_CouponId(coupon.getCouponId());
         long issuedCoupons = issueCouponRepository.countByCouponId(coupon.getCouponId());
-        assertThat(issuedCoupons).isEqualTo(Math.min(memberCount, couponAmount));
+        assertThat(issuedCoupons).isEqualTo(1);
     }
 
 

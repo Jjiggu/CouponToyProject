@@ -1,0 +1,144 @@
+services:
+  mysql:
+    image: mysql:8.0.36
+    container_name: coupon-toy-mysql
+    cpus: "1.0"
+    mem_limit: 1g
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-CouponToyProject}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-7815aA!@}
+      TZ: Asia/Seoul
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p${MYSQL_ROOT_PASSWORD:-7815aA!@}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: coupon-toy-redis
+    cpus: "0.5"
+    mem_limit: 512m
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - redis-data:/data
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: coupon-toy-app
+    cpus: "1.0"
+    mem_limit: 1g
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-CouponToyProject}
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-7815aA!@}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-p5Xy7UvZ9wR3tqK+LmNf6gTjWbDcE2AhFkIoM1JQl4o=}
+    ports:
+      - "8080:8080"
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: coupon-toy-cadvisor
+    privileged: true
+    ports:
+      - "8081:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+
+  mysqld-exporter:
+    image: prom/mysqld-exporter:v0.15.1
+    container_name: coupon-toy-mysqld-exporter
+    depends_on:
+      mysql:
+        condition: service_healthy
+    command:
+      - --config.my-cnf=/cfg/.my.cnf
+    volumes:
+      - ./monitoring/mysqld-exporter/.my.cnf:/cfg/.my.cnf:ro
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.61.0
+    container_name: coupon-toy-redis-exporter
+    depends_on:
+      redis:
+        condition: service_healthy
+    command:
+      - --redis.addr=redis://redis:6379
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: coupon-toy-node-exporter
+    command:
+      - --path.rootfs=/host
+    pid: host
+    volumes:
+      - /:/host:ro
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: coupon-toy-prometheus
+    depends_on:
+      - app
+      - cadvisor
+      - mysqld-exporter
+      - redis-exporter
+      - node-exporter
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: coupon-toy-grafana
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+volumes:
+  mysql-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:

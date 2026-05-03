@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.NoHandlerFoundException;
@@ -25,14 +26,25 @@ public class GlobalControllerAdvice {
 
     private final MessageSource messageSource;
 
-    @ExceptionHandler({DuplicateMemberException.class, IsAlreadyIssued.class})
-    public ResponseEntity<?> handleBadRequestException(RuntimeException ex) {
+    @ExceptionHandler(DuplicateMemberException.class)
+    public ResponseEntity<?> handleBadRequestException(DuplicateMemberException ex) {
         log.error("handling : {}, message : {}", ex.getClass().toString(), ex.getMessage());
 
         return ResponseEntity
                 .badRequest()
                 .body(
                         ApiUtils.error(ex.getMessage(), HttpStatus.BAD_REQUEST)
+                );
+    }
+
+    @ExceptionHandler(IsAlreadyIssued.class)
+    public ResponseEntity<?> handleAlreadyIssuedException(IsAlreadyIssued ex) {
+        log.error("handling : {}, message : {}", ex.getClass().toString(), ex.getMessage());
+
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(
+                        ApiUtils.error(ex.getMessage(), HttpStatus.CONFLICT)
                 );
     }
 
@@ -95,6 +107,25 @@ public class GlobalControllerAdvice {
                 .status(HttpStatus.METHOD_NOT_ALLOWED)
                 .body(
                         ApiUtils.error(ErrorCode.HTTP_REQUEST_METHOD_NOT_SUPPORTED.getMessage(),HttpStatus.METHOD_NOT_ALLOWED)
+                );
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<?> handleMethodArgumentNotValidException(
+            MethodArgumentNotValidException ex
+    ) {
+        String message = ErrorCode.BEAN_VALIDATION_ERROR.getMessage();
+        if (ex.getBindingResult().getFieldError() != null
+                && ex.getBindingResult().getFieldError().getDefaultMessage() != null) {
+            message = ex.getBindingResult().getFieldError().getDefaultMessage();
+        }
+
+        log.error("handling {}, message : {}", ex.getClass().toString(), message);
+
+        return ResponseEntity
+                .badRequest()
+                .body(
+                        ApiUtils.error(message, HttpStatus.BAD_REQUEST)
                 );
     }
 

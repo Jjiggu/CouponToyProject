@@ -40,6 +40,7 @@ public class SecurityConfig {
                                 .authenticationEntryPoint(unauthorizedHandler)
                 )
                 .authorizeHttpRequests(registry -> registry
+                                .requestMatchers("/actuator/health", "/actuator/info", "/actuator/prometheus").permitAll()
                                 .requestMatchers(HttpMethod.POST, "/members/signup").permitAll()
                                 .requestMatchers(HttpMethod.POST, "/members/login").permitAll()
                                 .anyRequest().authenticated()
