@@ -21,7 +21,7 @@ SPRING_DATA_REDIS_DATABASE=2 SPRING_JPA_SHOW_SQL=false SPRING_JPA_PROPERTIES_HIB
 | 변수 | 기본값 | 설명 |
 |---|---|---|
 | `BASE_URL` | `http://localhost:8080` | |
-| `METHOD` | `SERIALIZABLE` | `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `REDIS_TRANSACTIONAL`, `REDIS_EVENT` |
+| `METHOD` | `SERIALIZABLE` | `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `OPTIMISTIC`, `OPTIMISTIC_RETRY`, `REDIS_TRANSACTIONAL`, `REDIS_EVENT` |
 | `SCENARIO` | `smoke` | `burst`, `duplicate`, `smoke`, `soldout`, `step`, `spike`, `soak` |
 | `TOTAL_COUNT` | `100` | 쿠폰 수량 |
 | `MEMBERS` | `1000` | setup 에서 만들 회원 수 |
@@ -36,7 +36,8 @@ TOTAL_COUNT=100 MEMBERS=1000 ITERATIONS=1000 VUS=100 WARMUP=200 \
 k6 run --summary-export performance/results/stage1-burst-serializable.json performance/k6/coupon-issue.js
 ```
 
-- 상태 코드: 성공 201, 비동기 접수 202, 거절(품절·중복) 409, 트랜잭션 실패(데드락·락 대기 초과) 503
+- 상태 코드: 성공 201, 비동기 접수 202, 거절(품절·중복) 409, 트랜잭션 실패(데드락·락 대기 초과·버전 충돌) 503
+- `OPTIMISTIC_RETRY` 의 재시도 상한과 지연은 앱 쪽 설정이다. bootRun 앞에 `COUPON_ISSUE_OPTIMISTIC_MAX_ATTEMPTS`(기본 5), `COUPON_ISSUE_OPTIMISTIC_BACKOFF_BASE_MS`(10), `COUPON_ISSUE_OPTIMISTIC_BACKOFF_MAX_MS`(100) 를 붙인다
 - `coupon_issue_http_duration` 은 발급 요청만의 응답 시간이다. `http_req_duration` 에는 setup/teardown 요청이 섞인다.
 - `REDIS_EVENT` 는 teardown 시점에 DB 처리가 끝나지 않았을 수 있다. 결과 API 를 다시 조회한다.
 

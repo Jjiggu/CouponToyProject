@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
@@ -21,7 +22,7 @@ import java.util.stream.Collectors;
  */
 public class IssueRequestLog {
 
-    public record Entry(long arrivalSeq, long memberId, IssueOutcome outcome, long elapsedNanos, long completionSeq) {
+    public record Entry(long arrivalSeq, long memberId, IssueOutcome outcome, long elapsedNanos, long completionSeq, int attempts) {
     }
 
     public record Ordering(
@@ -33,6 +34,13 @@ public class IssueRequestLog {
     }
 
     public record Latency(long count, double p50, double p95, double p99, double max) {
+    }
+
+    public record Attempts(
+            Map<Integer, Long> histogram,  // 시도 횟수 -> 요청 수
+            long total,                    // 전체 트랜잭션 시도 수
+            long versionConflicts          // 버전 충돌로 끝난 시도 수
+    ) {
     }
 
     private final AtomicLong arrivalSeq = new AtomicLong();
@@ -48,9 +56,9 @@ public class IssueRequestLog {
         return arrivalSeq.incrementAndGet();
     }
 
-    public void complete(long arrival, long memberId, IssueOutcome outcome, long elapsedNanos) {
+    public void complete(long arrival, long memberId, IssueOutcome outcome, long elapsedNanos, int attempts) {
         long completion = outcome == IssueOutcome.SUCCESS ? completionSeq.incrementAndGet() : 0;
-        entries.add(new Entry(arrival, memberId, outcome, elapsedNanos, completion));
+        entries.add(new Entry(arrival, memberId, outcome, elapsedNanos, completion, attempts));
     }
 
     public Map<String, Long> lockMetricsAtStart() {
@@ -94,6 +102,17 @@ public class IssueRequestLog {
                 winners.stream().filter(w -> !firstN.contains(w)).count(),
                 outOfOrder
         );
+    }
+
+    // 재시도는 버전 충돌일 때만 하므로, 마지막 시도를 뺀 나머지는 모두 충돌이다. 마지막 시도도 충돌이면 하나 더한다.
+    public Attempts attempts() {
+        Map<Integer, Long> histogram = entries.stream()
+                .collect(Collectors.groupingBy(Entry::attempts, TreeMap::new, Collectors.counting()));
+        long total = entries.stream().mapToLong(Entry::attempts).sum();
+        long conflicts = entries.stream()
+                .mapToLong(e -> e.attempts() - 1 + (e.outcome() == IssueOutcome.OPTIMISTIC_CONFLICT ? 1 : 0))
+                .sum();
+        return new Attempts(histogram, total, conflicts);
     }
 
     public Latency latencyMs(boolean successOnly) {

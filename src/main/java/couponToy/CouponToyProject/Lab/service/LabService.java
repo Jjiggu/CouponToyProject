@@ -9,6 +9,7 @@ import couponToy.CouponToyProject.CouponIssue.service.CouponIssueStrategy;
 import couponToy.CouponToyProject.CouponIssue.service.EventIssueCouponService;
 import couponToy.CouponToyProject.CouponIssue.service.IsolationIssueCouponService;
 import couponToy.CouponToyProject.CouponIssue.service.IssueCouponService;
+import couponToy.CouponToyProject.CouponIssue.service.OptimisticIssueCouponService;
 import couponToy.CouponToyProject.CouponIssue.service.PessimisticIssueCouponService;
 import couponToy.CouponToyProject.global.constant.ErrorCode;
 import couponToy.CouponToyProject.global.exception.CouponNotFoundException;
@@ -43,6 +44,7 @@ public class LabService {
     private final CouponService couponService;
     private final IsolationIssueCouponService isolationIssueCouponService;
     private final PessimisticIssueCouponService pessimisticIssueCouponService;
+    private final OptimisticIssueCouponService optimisticIssueCouponService;
     private final IssueCouponService issueCouponService;
     private final EventIssueCouponService eventIssueCouponService;
     private final CouponIssuedRedisRepository couponIssuedRedisRepository;
@@ -74,6 +76,7 @@ public class LabService {
             IssueRequestLog.Ordering ordering,
             IssueRequestLog.Latency latencyMs,    // 진입 → 반환. 동기 방식은 DB 커밋 포함
             IssueRequestLog.Latency successLatencyMs,
+            IssueRequestLog.Attempts attempts,      // 요청당 트랜잭션 시도 수 (낙관적 락 재시도)
             Map<String, Long> innodbLockMetricsDelta // 쿠폰 생성 이후 MySQL 전역 카운터 변화량
     ) {
     }
@@ -112,20 +115,23 @@ public class LabService {
         IssueRequestLog log = logs.computeIfAbsent(couponId, id -> new IssueRequestLog(readLockMetrics()));
         long arrival = log.arrive();
         long startedAt = System.nanoTime();
+        int[] attempts = {1};
         try {
             IssueCouponResponse response = switch (method) {
                 case READ_COMMITTED -> isolationIssueCouponService.issueWithReadCommitted(memberId, couponId, duplicateCheck);
                 case REPEATABLE_READ -> isolationIssueCouponService.issueWithRepeatableRead(memberId, couponId, duplicateCheck);
                 case SERIALIZABLE -> isolationIssueCouponService.issueWithSerializable(memberId, couponId, duplicateCheck);
                 case PESSIMISTIC -> pessimisticIssueCouponService.issueCoupon(memberId, couponId);
+                case OPTIMISTIC -> optimisticIssueCouponService.issue(memberId, couponId);
+                case OPTIMISTIC_RETRY -> optimisticIssueCouponService.issueWithRetry(memberId, couponId, n -> attempts[0] = n);
                 case REDIS_TRANSACTIONAL -> issueCouponService.issueCoupon(memberId, couponId);
                 case REDIS_EVENT -> eventIssueCouponService.issueCoupon(memberId, couponId);
             };
             IssueOutcome outcome = method == CouponIssueStrategy.REDIS_EVENT ? IssueOutcome.ACCEPTED : IssueOutcome.SUCCESS;
-            log.complete(arrival, memberId, outcome, System.nanoTime() - startedAt);
+            log.complete(arrival, memberId, outcome, System.nanoTime() - startedAt, attempts[0]);
             return response;
         } catch (RuntimeException e) {
-            log.complete(arrival, memberId, IssueOutcome.of(e), System.nanoTime() - startedAt);
+            log.complete(arrival, memberId, IssueOutcome.of(e), System.nanoTime() - startedAt, attempts[0]);
             throw e;
         }
     }
@@ -160,6 +166,7 @@ public class LabService {
                 ordering,
                 log.latencyMs(false),
                 log.latencyMs(true),
+                log.attempts(),
                 delta(log.lockMetricsAtStart(), readLockMetrics())
         );
     }

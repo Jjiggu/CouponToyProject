@@ -1,6 +1,6 @@
 package couponToy.CouponToyProject.CouponIssue.service;
 
-import couponToy.CouponToyProject.CouponIssue.support.IsolationExperimentSupport;
+import couponToy.CouponToyProject.CouponIssue.support.ConcurrencyExperimentSupport;
 import couponToy.CouponToyProject.Lab.service.IssueOutcome;
 import couponToy.CouponToyProject.Lab.service.LabService.LabResult;
 import org.junit.jupiter.api.BeforeAll;
@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 실행 결과는 build/lab/stage1-isolation.md 에 쌓인다.
  */
 @SpringBootTest
-class IsolationIssueCouponServiceTest extends IsolationExperimentSupport {
+class IsolationIssueCouponServiceTest extends ConcurrencyExperimentSupport {
 
     private static final Path REPORT = Path.of("build/lab/stage1-isolation.md");
 

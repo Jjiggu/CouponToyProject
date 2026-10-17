@@ -1,7 +1,7 @@
 package couponToy.CouponToyProject.CouponIssue.service;
 
 import com.zaxxer.hikari.HikariDataSource;
-import couponToy.CouponToyProject.CouponIssue.support.IsolationExperimentSupport;
+import couponToy.CouponToyProject.CouponIssue.support.ConcurrencyExperimentSupport;
 import couponToy.CouponToyProject.Lab.service.IssueOutcome;
 import couponToy.CouponToyProject.Lab.service.LabService.LabResult;
 import org.junit.jupiter.api.BeforeAll;
@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest
 @EnabledIfEnvironmentVariable(named = "LAB_CHANGE_MYSQL_GLOBALS", matches = "true")
-class IsolationLockSettingsExperimentTest extends IsolationExperimentSupport {
+class IsolationLockSettingsExperimentTest extends ConcurrencyExperimentSupport {
 
     private static final Path REPORT = Path.of("build/lab/stage1-lock-settings.md");
 

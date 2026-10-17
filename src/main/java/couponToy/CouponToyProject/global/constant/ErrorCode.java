@@ -31,7 +31,8 @@ public enum ErrorCode {
 
     // DB 가 막은 경우
     UNIQUE_VIOLATION("이미 쿠폰 발급 받은 사용자입니다. (DB UNIQUE 제약 위반)"),
-    LOCK_FAILURE("DB 락 충돌로 트랜잭션이 롤백되었습니다. (데드락 또는 락 대기 시간 초과)");
+    LOCK_FAILURE("DB 락 충돌로 트랜잭션이 롤백되었습니다. (데드락 또는 락 대기 시간 초과)"),
+    OPTIMISTIC_CONFLICT("다른 요청이 먼저 쿠폰을 변경해 트랜잭션이 롤백되었습니다. (낙관적 락 버전 충돌)");
 
     private final String message;
 }

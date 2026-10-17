@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -71,6 +72,18 @@ public class GlobalControllerAdvice {
                 .status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(
                         ApiUtils.error(ErrorCode.LOCK_FAILURE.getMessage(), HttpStatus.SERVICE_UNAVAILABLE)
+                );
+    }
+
+    // 낙관적 락 버전 충돌: 데드락과 같이 재시도하면 성공할 수도 있는 일시적 실패라서 503
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<?> handleOptimisticLockingFailureException(OptimisticLockingFailureException ex) {
+        log.error("handling : {}, message : {}", ex.getClass().toString(), ex.getMessage());
+
+        return ResponseEntity
+                .status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(
+                        ApiUtils.error(ErrorCode.OPTIMISTIC_CONFLICT.getMessage(), HttpStatus.SERVICE_UNAVAILABLE)
                 );
     }
 

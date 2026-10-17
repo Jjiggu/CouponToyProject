@@ -10,6 +10,8 @@ public enum CouponIssueStrategy {
     REPEATABLE_READ("repeatable_read"),
     SERIALIZABLE("serializable"),
     PESSIMISTIC("pessimistic"),
+    OPTIMISTIC("optimistic"),
+    OPTIMISTIC_RETRY("optimistic_retry"),
     REDIS_TRANSACTIONAL("redis_transactional"),
     REDIS_EVENT("redis_event");
 

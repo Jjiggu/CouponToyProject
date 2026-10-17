@@ -30,14 +30,14 @@ import java.util.stream.LongStream;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
- * 1단계 실험 공통 장치: 실행 순서를 고정한 두 트랜잭션 재현, 동시 요청, 결과 기록.
+ * 단계별 동시성 실험 공통 장치: 실행 순서를 고정한 두 트랜잭션 재현, 동시 요청, 결과 기록.
  */
-public abstract class IsolationExperimentSupport extends AbstractCouponIssueIntegrationTestSupport {
+public abstract class ConcurrencyExperimentSupport extends AbstractCouponIssueIntegrationTestSupport {
 
-    // 락을 기다리는 트랜잭션과 그 트랜잭션에 실제로 적용된 격리 수준
+    // 락을 기다리는 트랜잭션과 그 트랜잭션에 실제로 적용된 격리 수준, CATS 스케줄링 가중치(MySQL 8.0.20+)
     private static final String LOCK_WAITS_SQL = """
-            SELECT DISTINCT t.trx_id, t.trx_isolation_level AS isolation, w.waiting_lock_mode AS lock_mode,
-                   w.locked_table_name AS locked_table, w.locked_index, LEFT(w.waiting_query, 40) AS waiting_query
+            SELECT DISTINCT t.trx_id, t.trx_isolation_level AS isolation, t.trx_schedule_weight AS weight, w.waiting_lock_mode AS lock_mode,
+                   w.locked_table_name AS locked_table, w.locked_index, LEFT(w.waiting_query, 200) AS waiting_query
             FROM sys.innodb_lock_waits w
             JOIN information_schema.innodb_trx t ON t.trx_id = w.waiting_trx_id
             """;
@@ -125,7 +125,7 @@ public abstract class IsolationExperimentSupport extends AbstractCouponIssueInte
         }
     }
 
-    private List<Map<String, Object>> awaitLockWaits(int expected) throws InterruptedException {
+    protected List<Map<String, Object>> awaitLockWaits(int expected) throws InterruptedException {
         long deadline = System.nanoTime() + SECONDS.toNanos(10);
         while (true) {
             List<Map<String, Object>> waits = jdbcTemplate.queryForList(LOCK_WAITS_SQL);
@@ -142,7 +142,7 @@ public abstract class IsolationExperimentSupport extends AbstractCouponIssueInte
         }
     }
 
-    private String latestDeadlock() {
+    protected String latestDeadlock() {
         String status = jdbcTemplate.queryForObject("SHOW ENGINE INNODB STATUS", (rs, rowNum) -> rs.getString("Status"));
         int start = status.indexOf("LATEST DETECTED DEADLOCK");
         int end = status.indexOf("------------\nTRANSACTIONS", start);
@@ -214,11 +214,11 @@ public abstract class IsolationExperimentSupport extends AbstractCouponIssueInte
             append("## 동시 요청: " + title
                     + " (재고 " + r.totalCount() + ", 요청 " + requestCount + ", 스레드 " + requestCount
                     + ", Hikari 최대 " + ((HikariDataSource) dataSource).getMaximumPoolSize() + ")\n\n"
-                    + "| 회차 | 요청 결과 | 발급 행 | issued_count | 초과 발급 | 수량 불일치 | 전량 발급 | 먼저 온 N명 중 당첨 | N명 밖 당첨 | 완료 순서 역전 | p50/p95/p99 ms | 총 소요 ms | 락 대기 | 데드락 | 타임아웃 |\n"
-                    + "|---:|---|---:|---:|---|---|---|---:|---:|---:|---|---:|---:|---:|---:|\n");
+                    + "| 회차 | 요청 결과 | 발급 행 | issued_count | 초과 발급 | 수량 불일치 | 전량 발급 | 먼저 온 N명 중 당첨 | N명 밖 당첨 | 완료 순서 역전 | p50/p95/p99 ms | 총 소요 ms | 락 대기 | 데드락 | 타임아웃 | 시도 분포 | 버전 충돌 |\n"
+                    + "|---:|---|---:|---:|---|---|---|---:|---:|---:|---|---:|---:|---:|---:|---|---:|\n");
         }
         long n = Math.min(r.totalCount(), r.ordering().validRequests());
-        append("| %d | %s | %d | %d | %s | %s | %s | %d/%d | %d | %d | %.0f/%.0f/%.0f | %d | %d | %d | %d |%n".formatted(
+        append("| %d | %s | %d | %d | %s | %s | %s | %d/%d | %d | %d | %.0f/%.0f/%.0f | %d | %d | %d | %d | %s | %d |%n".formatted(
                 round, r.requests(), r.issueRows(), r.issuedCount(),
                 r.checks().notOverIssued() ? "아니오" : "예",
                 r.checks().issuedCountMatchesRows() ? "아니오" : "예",
@@ -228,11 +228,12 @@ public abstract class IsolationExperimentSupport extends AbstractCouponIssueInte
                 r.latencyMs().p50(), r.latencyMs().p95(), r.latencyMs().p99(), burst.wallMs(),
                 r.innodbLockMetricsDelta().get("lock_row_lock_waits"),
                 r.innodbLockMetricsDelta().get("lock_deadlocks"),
-                r.innodbLockMetricsDelta().get("lock_timeouts")));
+                r.innodbLockMetricsDelta().get("lock_timeouts"),
+                r.attempts().histogram(), r.attempts().versionConflicts()));
     }
 
     protected void append(String text) {
-        synchronized (IsolationExperimentSupport.class) {
+        synchronized (ConcurrencyExperimentSupport.class) {
             try {
                 Files.writeString(reportPath(), text, StandardOpenOption.APPEND);
             } catch (IOException e) {

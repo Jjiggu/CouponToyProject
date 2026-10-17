@@ -22,12 +22,12 @@ class IssueRequestLogTest {
         long a6 = log.arrive(); // member 99 (없는 회원) -> 유효 요청 아님
 
         // 완료 순서: 2, 1, 4 순으로 커밋
-        log.complete(a2, 2, IssueOutcome.SUCCESS, 1_000_000);
-        log.complete(a1, 1, IssueOutcome.SUCCESS, 2_000_000);
-        log.complete(a3, 3, IssueOutcome.DEADLOCK, 3_000_000);
-        log.complete(a4, 1, IssueOutcome.DUPLICATE, 4_000_000);
-        log.complete(a5, 4, IssueOutcome.SUCCESS, 5_000_000);
-        log.complete(a6, 99, IssueOutcome.NOT_FOUND, 6_000_000);
+        log.complete(a2, 2, IssueOutcome.SUCCESS, 1_000_000, 1);
+        log.complete(a1, 1, IssueOutcome.SUCCESS, 2_000_000, 1);
+        log.complete(a3, 3, IssueOutcome.DEADLOCK, 3_000_000, 1);
+        log.complete(a4, 1, IssueOutcome.DUPLICATE, 4_000_000, 1);
+        log.complete(a5, 4, IssueOutcome.SUCCESS, 5_000_000, 1);
+        log.complete(a6, 99, IssueOutcome.NOT_FOUND, 6_000_000, 1);
 
         IssueRequestLog.Ordering ordering = log.ordering(List.of(1L, 2L, 4L), 3);
 
@@ -40,5 +40,22 @@ class IssueRequestLogTest {
         assertThat(log.latencyMs(true).count()).isEqualTo(3);
         assertThat(log.latencyMs(true).max()).isEqualTo(5.0);
         assertThat(log.latencyMs(false).p50()).isEqualTo(3.0);
+    }
+
+    @Test
+    @DisplayName("재시도는 버전 충돌일 때만 하므로 마지막 시도 전까지는 모두 충돌로 센다")
+    void attempts() {
+        IssueRequestLog log = new IssueRequestLog(Map.of());
+        log.complete(log.arrive(), 1, IssueOutcome.SUCCESS, 1, 1);              // 충돌 0
+        log.complete(log.arrive(), 2, IssueOutcome.SUCCESS, 1, 3);              // 충돌 2 후 성공
+        log.complete(log.arrive(), 3, IssueOutcome.OPTIMISTIC_CONFLICT, 1, 5);  // 5번 모두 충돌
+        log.complete(log.arrive(), 4, IssueOutcome.SOLD_OUT, 1, 2);             // 충돌 1 후 품절
+
+        IssueRequestLog.Attempts attempts = log.attempts();
+
+        assertThat(attempts.histogram()).containsExactly(
+                Map.entry(1, 1L), Map.entry(2, 1L), Map.entry(3, 1L), Map.entry(5, 1L));
+        assertThat(attempts.total()).isEqualTo(11);
+        assertThat(attempts.versionConflicts()).isEqualTo(0 + 2 + 5 + 1);
     }
 }
