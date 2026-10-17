@@ -11,6 +11,8 @@ const totalCount = Number(__ENV.TOTAL_COUNT || 100);
 const memberCount = Number(__ENV.MEMBERS || 1000);
 const duplicateUsers = Number(__ENV.DUPLICATE_USERS || 100);
 const warmupRequests = Number(__ENV.WARMUP || 0);
+// false 면 중복 확인 SELECT 를 건너뛴다 (격리 수준 방식 전용)
+const duplicateCheck = (__ENV.DUPLICATE_CHECK || 'true') !== 'false';
 
 // 202 는 접수일 뿐 발급 완료가 아니다.
 const expectedSuccessStatus = method === 'REDIS_EVENT' ? 202 : 201;
@@ -166,7 +168,7 @@ export function teardown(data) {
 function issue(couponId, memberId, tags) {
   return http.post(
     `${baseUrl}/lab/coupons/${couponId}/issue`,
-    JSON.stringify({ memberId, method }),
+    JSON.stringify({ memberId, method, duplicateCheck }),
     { ...jsonHeaders, tags },
   );
 }

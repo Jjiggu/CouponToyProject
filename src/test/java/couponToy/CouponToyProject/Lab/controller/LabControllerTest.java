@@ -102,6 +102,21 @@ class LabControllerTest extends AbstractCouponIssueIntegrationTestSupport {
         postJson("/lab/coupons/abc/issue", issueBody(1, "SERIALIZABLE")).andExpect(status().isBadRequest());
         postJson("/lab/members", "{\"count\": 0}").andExpect(status().isBadRequest());
         postJson("/lab/coupons", "{\"name\": \"lab\", \"totalCount\": -1}").andExpect(status().isBadRequest());
+        // 중복 확인 SELECT 제거는 격리 수준 방식에서만 의미가 있다
+        postJson("/lab/coupons/1/issue", "{\"memberId\": 1, \"method\": \"PESSIMISTIC\", \"duplicateCheck\": false}")
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("duplicateCheck=false 면 앱 중복 확인 없이 UNIQUE 제약이 막는다")
+    void withoutDuplicateCheck() throws Exception {
+        long first = body(postJson("/lab/members", "{\"count\": 1}")).path("response").path("firstMemberId").asLong();
+        long couponId = body(postJson("/lab/coupons", "{\"name\": \"lab\", \"totalCount\": 10}")).path("response").path("couponId").asLong();
+        String body = "{\"memberId\": " + first + ", \"method\": \"READ_COMMITTED\", \"duplicateCheck\": false}";
+
+        postJson("/lab/coupons/" + couponId + "/issue", body).andExpect(status().isCreated());
+        postJson("/lab/coupons/" + couponId + "/issue", body).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.message").value("이미 쿠폰 발급 받은 사용자입니다. (DB UNIQUE 제약 위반)"));
     }
 
     @Test

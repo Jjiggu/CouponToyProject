@@ -104,13 +104,19 @@ public class LabService {
     }
 
     public IssueCouponResponse issue(Long couponId, Long memberId, CouponIssueStrategy method) {
+        return issue(couponId, memberId, method, true);
+    }
+
+    // duplicateCheck 는 격리 수준 방식에만 전달된다. 입력 검증은 LabController.IssueRequest 가 한다.
+    public IssueCouponResponse issue(Long couponId, Long memberId, CouponIssueStrategy method, boolean duplicateCheck) {
         IssueRequestLog log = logs.computeIfAbsent(couponId, id -> new IssueRequestLog(readLockMetrics()));
         long arrival = log.arrive();
         long startedAt = System.nanoTime();
         try {
             IssueCouponResponse response = switch (method) {
-                case REPEATABLE_READ -> isolationIssueCouponService.issueWithRepeatableRead(memberId, couponId);
-                case SERIALIZABLE -> isolationIssueCouponService.issueWithSerializable(memberId, couponId);
+                case READ_COMMITTED -> isolationIssueCouponService.issueWithReadCommitted(memberId, couponId, duplicateCheck);
+                case REPEATABLE_READ -> isolationIssueCouponService.issueWithRepeatableRead(memberId, couponId, duplicateCheck);
+                case SERIALIZABLE -> isolationIssueCouponService.issueWithSerializable(memberId, couponId, duplicateCheck);
                 case PESSIMISTIC -> pessimisticIssueCouponService.issueCoupon(memberId, couponId);
                 case REDIS_TRANSACTIONAL -> issueCouponService.issueCoupon(memberId, couponId);
                 case REDIS_EVENT -> eventIssueCouponService.issueCoupon(memberId, couponId);

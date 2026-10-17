@@ -21,13 +21,14 @@ SPRING_DATA_REDIS_DATABASE=2 SPRING_JPA_SHOW_SQL=false SPRING_JPA_PROPERTIES_HIB
 | 변수 | 기본값 | 설명 |
 |---|---|---|
 | `BASE_URL` | `http://localhost:8080` | |
-| `METHOD` | `SERIALIZABLE` | `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `REDIS_TRANSACTIONAL`, `REDIS_EVENT` |
+| `METHOD` | `SERIALIZABLE` | `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `REDIS_TRANSACTIONAL`, `REDIS_EVENT` |
 | `SCENARIO` | `smoke` | `burst`, `duplicate`, `smoke`, `soldout`, `step`, `spike`, `soak` |
 | `TOTAL_COUNT` | `100` | 쿠폰 수량 |
 | `MEMBERS` | `1000` | setup 에서 만들 회원 수 |
 | `ITERATIONS`, `VUS` | 시나리오별 | `burst`, `duplicate` 의 총 요청 수와 동시 VU |
 | `DUPLICATE_USERS` | `100` | `duplicate` 에서 요청을 나눠 쓸 회원 수 |
 | `WARMUP` | `0` | 별도 쿠폰에 같은 방식으로 먼저 보낼 요청 수 |
+| `DUPLICATE_CHECK` | `true` | `false` 면 중복 확인 SELECT 를 건너뛴다. `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE` 에서만 |
 
 ```bash
 BASE_URL=http://localhost:18080 METHOD=SERIALIZABLE SCENARIO=burst \

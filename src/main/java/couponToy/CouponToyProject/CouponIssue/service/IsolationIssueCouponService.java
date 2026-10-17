@@ -18,8 +18,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 1단계: 명시적 락 없이 격리 수준만 바꿔서 비교한다.
- * 두 public 메서드는 같은 로직을 쓰고 isolation 속성만 다르다.
+ * 세 public 메서드는 같은 로직을 쓰고 isolation 속성만 다르다.
  * (@Version, SELECT ... FOR UPDATE, Redis, 조건부 UPDATE 없음)
+ *
+ * duplicateCheck=false 는 변형 실험용이다. 중복 확인 SELECT 를 건너뛰고 UNIQUE 제약에만 맡긴다.
  */
 @Service
 @RequiredArgsConstructor
@@ -29,18 +31,23 @@ public class IsolationIssueCouponService {
     private final MemberRepository memberRepository;
     private final CouponRepository couponRepository;
 
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public IssueCouponResponse issueWithReadCommitted(Long memberId, Long couponId, boolean duplicateCheck) {
+        return issue(memberId, couponId, duplicateCheck);
+    }
+
     @Transactional(isolation = Isolation.REPEATABLE_READ)
-    public IssueCouponResponse issueWithRepeatableRead(Long memberId, Long couponId) {
-        return issue(memberId, couponId);
+    public IssueCouponResponse issueWithRepeatableRead(Long memberId, Long couponId, boolean duplicateCheck) {
+        return issue(memberId, couponId, duplicateCheck);
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
-    public IssueCouponResponse issueWithSerializable(Long memberId, Long couponId) {
-        return issue(memberId, couponId);
+    public IssueCouponResponse issueWithSerializable(Long memberId, Long couponId, boolean duplicateCheck) {
+        return issue(memberId, couponId, duplicateCheck);
     }
 
     // private 이므로 프록시를 거치지 않는다. 트랜잭션은 위 public 메서드가 다른 빈에서 호출될 때만 시작된다.
-    private IssueCouponResponse issue(Long memberId, Long couponId) {
+    private IssueCouponResponse issue(Long memberId, Long couponId, boolean duplicateCheck) {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new MemberNotFoundException(ErrorCode.NOT_FOUND_MEMBER));
 
@@ -48,7 +55,7 @@ public class IsolationIssueCouponService {
         Coupon coupon = couponRepository.findById(couponId)
                 .orElseThrow(() -> new CouponNotFoundException(ErrorCode.NOT_FOUND_COUPON));
 
-        if (issueCouponRepository.existsByMemberIdAndCouponId(memberId, couponId)) {
+        if (duplicateCheck && issueCouponRepository.existsByMemberIdAndCouponId(memberId, couponId)) {
             throw new IsAlreadyIssued(ErrorCode.IS_ALREADY_ISSUED);
         }
 
