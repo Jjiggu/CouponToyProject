@@ -17,12 +17,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Tests
 ```bash
 ./gradlew test                                          # 전체 테스트 실행
-./gradlew test --tests "*.IssueCouponServiceTest"       # 특정 테스트 클래스 실행
-./gradlew test --tests "*.IssueCouponServiceTest.duplicateIssuePreventionTest"  # 단일 테스트 실행
+./gradlew test --tests "*.IsolationIssueCouponServiceTest"                      # 특정 테스트 클래스 실행
+./gradlew test --tests "*.IsolationIssueCouponServiceTest.sameMemberTwiceAtOnce"  # 단일 테스트 실행
 ```
 
-> 통합 테스트(`@SpringBootTest`)는 MySQL과 Redis가 로컬에서 실행 중이어야 한다.
-> 현재 `refactor/#26-architecture-refactoring` 브랜치의 테스트 코드는 리팩토링 이전 기준일 수 있다.
+> 통합 테스트(`@SpringBootTest`)는 MySQL과 Redis가 로컬에서 실행 중이어야 한다. 테스트는 `CouponToyProject_test` DB와 Redis db 1을 쓴다.
+> 1단계 실행 기록은 `build/lab/stage1-isolation.md` 에 남는다. 학습 단계 문서는 `docs/learning/`.
 
 ### Infrastructure (Docker)
 ```bash
@@ -43,39 +43,36 @@ docker build -t docker-coupon .
 ### Domain Structure
 패키지는 도메인별로 구성되며, 각 도메인은 `controller / service / repository / model / dto` 레이어를 가진다.
 
-- **Member** – 회원 가입/로그인 (JWT 인증)
-- **Coupon** – 쿠폰 생성/조회
-- **CouponIssue** – 쿠폰 발급 (Redis SET pre-check + 비관적 락 DB 발급)
+- **Member** – 실험용 회원 엔티티 (인증 없음. email/password/role 컬럼은 기존 DB 스키마 호환용)
+- **Coupon** – 쿠폰 엔티티와 생성
+- **CouponIssue** – 쿠폰 발급. 학습 단계별 비교 구현 (`IsolationIssueCouponService`, `PessimisticIssueCouponService`, `IssueCouponService`(Redis), `EventIssueCouponService`)
+- **Lab** – `local` 프로필 전용 실험 API(`/lab/**`, 인증 없음). 데이터 준비, 방식 선택 발급, 결과 조회, 초기화. 단일 진입점 `LabService.issue()` 가 도착 순서와 결과를 기록
 
 ### API Endpoints
 
 | Method | Path | 설명 |
 |---|---|---|
-| POST | `/members/signup` | 회원가입 (인증 불필요) |
-| POST | `/members/login` | 로그인 → JWT 반환 (인증 불필요) |
-| POST | `/coupons` | 쿠폰 생성 |
-| GET | `/coupons/{couponId}` | 쿠폰 조회 |
-| POST | `/coupons/issue/{couponId}` | 쿠폰 발급 |
-| POST | `/coupons/issue/pessimistic/{couponId}` | 비교용 비관적 락 발급 |
+| POST | `/lab/members`, `/lab/coupons` | 실험 데이터 준비 (local 전용) |
+| POST | `/lab/coupons/{couponId}/issue` | `{memberId, method}` 로 방식 선택 발급 (local 전용). `REDIS_EVENT` 는 202 |
+| GET | `/lab/coupons/{couponId}/result` | 검증 기준·순서·지연·락 카운터 (local 전용) |
+| DELETE | `/lab/data` | 설정된 DB 3개 테이블 TRUNCATE + Redis `coupon:*` 삭제 (local 전용) |
 
-### Coupon Issue Flow (핵심)
+### Redis 발급 플로우 (`method: REDIS_TRANSACTIONAL`)
 
 ```
-POST /coupons/issue/{couponId}
-  → IssueCouponService.issueCoupon()
+IssueCouponService.issueCoupon()
 
-  [1] couponRepository.findById() — 락 없는 읽기, totalCount 확인
+  [1] Redis GET coupon:total:{couponId} — 없으면 couponRepository.findById() 후 재캐싱
 
   [2] CouponIssuedRedisRepository.checkAndRegister() — Redis MULTI/EXEC
         SCARD coupon:issued:{couponId}  → 현재 발급 수
         SADD  coupon:issued:{couponId} userId → 중복 체크
         ───────────────────────────────────────
-        SADD == 0 → IsAlreadyIssued (400)          ← DB 미접근
+        SADD == 0 → IsAlreadyIssued (409)          ← DB 미접근
         SCARD >= totalCount → SREM + CouponSoldOutException (409)
 
-  [3] couponRepository.findByCouponIdForUpdate() — PESSIMISTIC_WRITE
-        coupon.increaseIssueAmount()               ← DB 최종 안전장치
-        issueCouponRepository.save()
+  [3] issueCouponRepository.save()               ← UNIQUE(coupon_id, member_id)
+        couponRepository.increaseIssuedCount()     ← 조건부 UPDATE (issued_count < total_count), 0건이면 품절
 
   [4] 예외 발생 시 → CouponIssuedRedisRepository.remove() — Redis 롤백
 ```
@@ -88,23 +85,23 @@ POST /coupons/issue/{couponId}
 
 ### Concurrency Strategy
 - **Redis SET + MULTI/EXEC**: SCARD(수량 체크) + SADD(중복 방지)를 원자적으로 실행 — Redis 단계에서 대부분의 초과·중복 발급을 사전 차단
-- **비관적 락(PESSIMISTIC_WRITE)**: Redis 통과 후 DB 수준에서 최종 수량 검증 (`Coupon.increaseIssueAmount()`)
+- **DB 조건부 UPDATE + UNIQUE**: Redis 통과 후 DB 수준에서 최종 수량·중복 검증 (비관적 락은 `PessimisticIssueCouponService` 에만 있음)
 - **Redis 롤백**: DB 발급 실패 시 SREM으로 Redis 상태 복구
 
 ### Global Infrastructure (`global` 패키지)
-- **Security**: JWT Stateless 인증, `/members/signup`·`/members/login`만 permitAll
+- **인증 없음**: 모든 API 는 `Lab` 패키지에 있고 `@Profile("local")` 로만 등록된다
 - **API 응답**: `ApiUtils.success()` / `ApiUtils.error()` → `ApiResult<T>` 래퍼
 - **예외 처리**: `GlobalControllerAdvice`에서 도메인 예외를 HTTP 응답으로 변환
-  - 400: `DuplicateMemberException`, `IsAlreadyIssued`
-  - 404: `CouponNotFoundException`, `MemberNotFoundException`
-  - 409: `CouponSoldOutException`
-- **AOP**: `@Retry` 어노테이션 + `OptimisticLockRetryAspect`
+  - 400: 입력 검증·파싱 오류
+  - 404: `CouponNotFoundException`, `MemberNotFoundException`, 없는 경로
+  - 409: `CouponSoldOutException`, `IsAlreadyIssued`, `DataIntegrityViolationException`(UNIQUE 위반)
+  - 503: `PessimisticLockingFailureException`(데드락, 락 대기 시간 초과)
+- **AOP**: `@Retry` 어노테이션 + `OptimisticLockRetryAspect` (호출처 없음, 2단계에서 검토)
 
 ### Tech Stack
-- Java 17, Spring Boot 3.4.1, Spring Security, Spring Data JPA, Spring Data Redis
-- MySQL 8, Redis
-- JWT (`com.auth0:java-jwt`), Lombok
-- Test: JUnit 5
+- Java 17, Spring Boot 3.4.1, Spring Data JPA, Spring Data Redis, Lombok
+- MySQL 8.0.36, Redis 7.2
+- Test: JUnit 5, k6 (`performance/k6/coupon-issue.js`)
 
 ## 행동 지침
 
