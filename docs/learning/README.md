@@ -4,7 +4,7 @@
 
 | 단계 | 주제 | 상태 |
 |---|---|---|
-| 1 | [명시적 락 없이 격리 수준 비교](01-isolation-level.md) | 구현·실행 완료 |
+| 1 | [명시적 락 없이 격리 수준 비교](01-isolation-level.md) | 구현·실행 완료 (변형 실험 포함) |
 | 2 | 낙관적 락과 비관적 락 | 계획 |
 | 3 | Redis Transaction 과 Lua | 계획 |
 | 4 | Spring @Async | 계획 |
@@ -46,7 +46,7 @@ API (`local` 프로필에서만 등록, 인증 없음)
 |---|---|---|---|
 | POST | `/lab/members` | `{"count": 1000}` | 회원 일괄 생성, `firstMemberId`~`lastMemberId` 반환 |
 | POST | `/lab/coupons` | `{"name": "s1", "totalCount": 100}` | 쿠폰 생성. 쿠폰마다 요청 기록과 InnoDB 락 카운터 기준값을 새로 잡는다 |
-| POST | `/lab/coupons/{id}/issue` | `{"memberId": 1, "method": "SERIALIZABLE"}` | 방식 선택 발급. `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `REDIS_TRANSACTIONAL`, `REDIS_EVENT` |
+| POST | `/lab/coupons/{id}/issue` | `{"memberId": 1, "method": "SERIALIZABLE"}` | 방식 선택 발급. `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `REDIS_TRANSACTIONAL`, `REDIS_EVENT`. 격리 수준 방식은 `"duplicateCheck": false` 로 중복 확인 SELECT 를 뺄 수 있다 |
 | GET | `/lab/coupons/{id}/result` | | 검증 기준, 요청 결과, 순서, 서버 측 지연, 락 카운터 변화량 |
 | DELETE | `/lab/data` | | **설정된 DB 의 `coupon_issues`·`coupons`·`members` 를 TRUNCATE 하고 Redis `coupon:*` 키를 지운다** |
 
@@ -97,17 +97,18 @@ API (`local` 프로필에서만 등록, 인증 없음)
 ### 수정·추가
 | 대상 | 내용 |
 |---|---|
-| `IsolationIssueCouponService` | 1단계 구현 (신규) |
+| `IsolationIssueCouponService` | 1단계 구현 (신규). RC·RR·SERIALIZABLE, 변형 실험용 `duplicateCheck` |
 | `Lab/*` | 실험 API, 진입점 요청 기록(`IssueRequestLog`), 결과 분류(`IssueOutcome`) (신규) |
-| `CouponIssueStrategy` | 방식 선택 값으로 재사용, `REPEATABLE_READ`·`SERIALIZABLE` 추가 |
+| `CouponIssueStrategy` | 방식 선택 값으로 재사용, `READ_COMMITTED`·`REPEATABLE_READ`·`SERIALIZABLE` 추가 |
 | 비관적·Redis·Event 서비스 | `MemberDetails` 대신 `memberId` 를 받는다 (실험 API 에서 호출하기 위해) |
 | `GlobalControllerAdvice`, `ErrorCode` | 잘못된 입력 400, UNIQUE 위반 409, 락 실패 503, 없는 경로 404 (이전에는 모두 500). 인증·회원가입용 핸들러와 코드 제거 |
 | `build.gradle` | thymeleaf(템플릿 없음), security, jwt 의존성 제거 |
 | `Member`, `MemberRepository` | 비밀번호 인코딩과 이메일/이름 조회 제거. 컬럼은 유지 |
 | `IssueCouponService`, `CouponService` | 요청 바디로 회원을 바꾸던 오버로드, 쿠폰 조회 메서드 제거 |
 | `docker-compose.yml` | app 의 `JWT_SECRET_KEY` 제거 (나머지 미커밋 변경 그대로) |
-| 테스트 공통 지원 | 회원을 회원가입(BCrypt) 대신 리포지토리로 저장, `local` 프로필, Redis db 1 |
-| `LabControllerTest` | 삭제한 컨트롤러 통합 테스트가 보던 방식별 성공·중복·품절 응답 형식을 5개 방식 모두에 대해 확인 |
+| 테스트 공통 지원 | 회원을 회원가입(BCrypt) 대신 리포지토리로 저장, `local` 프로필, Redis db 1. 1단계 순서 고정·동시 요청 장치는 `IsolationExperimentSupport` |
+| `IsolationLockSettingsExperimentTest` | 데드락 감지·락 대기 시간 변형. MySQL 전역 설정을 바꾸므로 `LAB_CHANGE_MYSQL_GLOBALS=true` 일 때만 실행 |
+| `LabControllerTest` | 삭제한 컨트롤러 통합 테스트가 보던 방식별 성공·중복·품절 응답 형식을 모든 방식에 대해 확인 |
 | `performance/k6/coupon-issue.js`, `performance/README.md` | JWT 토큰 대신 실험 API 사용 |
 
 ### 유지

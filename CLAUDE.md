@@ -18,11 +18,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 ./gradlew test                                          # 전체 테스트 실행
 ./gradlew test --tests "*.IsolationIssueCouponServiceTest"                      # 특정 테스트 클래스 실행
-./gradlew test --tests "*.IsolationIssueCouponServiceTest.sameMemberTwiceAtOnce"  # 단일 테스트 실행
+./gradlew test --tests "*.IsolationIssueCouponServiceTest.concurrentRequests"     # 단일 테스트 실행
+LAB_CHANGE_MYSQL_GLOBALS=true ./gradlew test --tests "*.IsolationLockSettingsExperimentTest"  # MySQL 전역 락 설정을 바꾸는 실험 (끝나면 복구)
 ```
 
 > 통합 테스트(`@SpringBootTest`)는 MySQL과 Redis가 로컬에서 실행 중이어야 한다. 테스트는 `CouponToyProject_test` DB와 Redis db 1을 쓴다.
-> 1단계 실행 기록은 `build/lab/stage1-isolation.md` 에 남는다. 학습 단계 문서는 `docs/learning/`.
+> 1단계 실행 기록은 `build/lab/stage1-isolation.md`, `build/lab/stage1-lock-settings.md` 에 남는다. 학습 단계 문서는 `docs/learning/`.
 
 ### Infrastructure (Docker)
 ```bash
@@ -53,7 +54,7 @@ docker build -t docker-coupon .
 | Method | Path | 설명 |
 |---|---|---|
 | POST | `/lab/members`, `/lab/coupons` | 실험 데이터 준비 (local 전용) |
-| POST | `/lab/coupons/{couponId}/issue` | `{memberId, method}` 로 방식 선택 발급 (local 전용). `REDIS_EVENT` 는 202 |
+| POST | `/lab/coupons/{couponId}/issue` | `{memberId, method, duplicateCheck?}` 로 방식 선택 발급 (local 전용). `REDIS_EVENT` 는 202 |
 | GET | `/lab/coupons/{couponId}/result` | 검증 기준·순서·지연·락 카운터 (local 전용) |
 | DELETE | `/lab/data` | 설정된 DB 3개 테이블 TRUNCATE + Redis `coupon:*` 삭제 (local 전용) |
 
