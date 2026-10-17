@@ -11,6 +11,7 @@
 동시성 제어와 비동기 처리를 한 단계씩 구현하고 직접 실행해 확인한다. 계획, 실험 API(`/lab`, `local` 프로필 전용), 단계별 결과는 [docs/learning](docs/learning/README.md) 에 있다.
 
 - [1단계: 명시적 락 없이 격리 수준 비교](docs/learning/01-isolation-level.md)
+- [2단계: 비관적 락과 낙관적 락](docs/learning/02-optimistic-pessimistic.md)
 
 ## 기술 스택
 
@@ -49,7 +50,7 @@ SPRING_DATA_REDIS_DATABASE=2 ./gradlew bootRun
 |---|---|---|---|
 | POST | `/lab/members` | `{"count": 1000}` | 실험용 회원 일괄 생성 |
 | POST | `/lab/coupons` | `{"name": "s1", "totalCount": 100}` | 실험용 쿠폰 생성 |
-| POST | `/lab/coupons/{couponId}/issue` | `{"memberId": 1, "method": "SERIALIZABLE"}` | 방식 선택 발급: `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `REDIS_TRANSACTIONAL`, `REDIS_EVENT`(202 접수). 격리 수준 방식은 `duplicateCheck: false` 가능 |
+| POST | `/lab/coupons/{couponId}/issue` | `{"memberId": 1, "method": "SERIALIZABLE"}` | 방식 선택 발급: `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `OPTIMISTIC`, `OPTIMISTIC_RETRY`, `REDIS_TRANSACTIONAL`, `REDIS_EVENT`(202 접수). 격리 수준 방식은 `duplicateCheck: false` 가능 |
 | GET | `/lab/coupons/{couponId}/result` | | 발급 결과, 수량, 검증 기준, 순서, 지연 |
 | DELETE | `/lab/data` | | 실험 데이터 초기화 |
 

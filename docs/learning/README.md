@@ -5,7 +5,7 @@
 | 단계 | 주제 | 상태 |
 |---|---|---|
 | 1 | [명시적 락 없이 격리 수준 비교](01-isolation-level.md) | 구현·실행 완료 (변형 실험 포함) |
-| 2 | 낙관적 락과 비관적 락 | 계획 |
+| 2 | [낙관적 락과 비관적 락](02-optimistic-pessimistic.md) | 구현·실행 완료 |
 | 3 | Redis Transaction 과 Lua | 계획 |
 | 4 | Spring @Async | 계획 |
 | 5 | Redis Pub/Sub | 계획 |
@@ -23,12 +23,12 @@
 | 유효 요청이 충분하면 수량만큼 발급 | `checks.fullyIssued` (유효 요청 < 수량이면 `null`) |
 | 접수·완료·실패·미완료 구분 | `requests` (진입점에서 본 결과), `issueRows` (DB에서 본 완료). 비동기 단계부터 둘이 달라진다 |
 
-결과 분류(`IssueOutcome`): `SUCCESS`(커밋 완료), `ACCEPTED`(접수만), 거절 `SOLD_OUT`·`DUPLICATE`·`UNIQUE_VIOLATION`(HTTP 409), 트랜잭션 실패 `DEADLOCK`·`LOCK_WAIT_TIMEOUT`(HTTP 503), `NOT_FOUND`, `ERROR`.
+결과 분류(`IssueOutcome`): `SUCCESS`(커밋 완료), `ACCEPTED`(접수만), 거절 `SOLD_OUT`·`DUPLICATE`·`UNIQUE_VIOLATION`(HTTP 409), 트랜잭션 실패 `DEADLOCK`·`LOCK_WAIT_TIMEOUT`·`OPTIMISTIC_CONFLICT`(HTTP 503), `NOT_FOUND`, `ERROR`.
 
 ### 순서는 세 가지를 따로 기록한다
 
 - **도착 순서**: 단일 진입점 `LabService.issue()` 에 들어온 순서(쿠폰별 `AtomicLong`). 모든 단계의 공통 기준이다.
-- **당첨자 선정 순서**: 누가 수량을 차지했는지 결정되는 지점. 1~2단계는 DB 커밋, 3단계부터는 Redis 예약 시점이다.
+- **당첨자 선정 순서**: 누가 수량을 차지했는지 결정되는 지점. 1~2단계는 DB 커밋, 3단계부터는 Redis 예약 시점이다. DB 락을 기다리는 요청은 MySQL 8.0.20+ 의 CATS 가 정한 순서(가중치가 큰 쪽 먼저, 같으면 오래 기다린 쪽 먼저)로 락을 받는다. 도착 순서와 다를 수 있다([2단계 4-6](02-optimistic-pessimistic.md#4-6-락-부여-순서-cats-보완-실험)).
 - **DB 처리 완료 순서**: 커밋된 순서. 동기 방식은 진입점에서 커밋 후 반환 순서로 기록한다.
 
 결과 API 의 `ordering`
@@ -46,7 +46,7 @@ API (`local` 프로필에서만 등록, 인증 없음)
 |---|---|---|---|
 | POST | `/lab/members` | `{"count": 1000}` | 회원 일괄 생성, `firstMemberId`~`lastMemberId` 반환 |
 | POST | `/lab/coupons` | `{"name": "s1", "totalCount": 100}` | 쿠폰 생성. 쿠폰마다 요청 기록과 InnoDB 락 카운터 기준값을 새로 잡는다 |
-| POST | `/lab/coupons/{id}/issue` | `{"memberId": 1, "method": "SERIALIZABLE"}` | 방식 선택 발급. `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `REDIS_TRANSACTIONAL`, `REDIS_EVENT`. 격리 수준 방식은 `"duplicateCheck": false` 로 중복 확인 SELECT 를 뺄 수 있다 |
+| POST | `/lab/coupons/{id}/issue` | `{"memberId": 1, "method": "SERIALIZABLE"}` | 방식 선택 발급. `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `OPTIMISTIC`, `OPTIMISTIC_RETRY`, `REDIS_TRANSACTIONAL`, `REDIS_EVENT`. 격리 수준 방식은 `"duplicateCheck": false` 로 중복 확인 SELECT 를 뺄 수 있다 |
 | GET | `/lab/coupons/{id}/result` | | 검증 기준, 요청 결과, 순서, 서버 측 지연, 락 카운터 변화량 |
 | DELETE | `/lab/data` | | **설정된 DB 의 `coupon_issues`·`coupons`·`members` 를 TRUNCATE 하고 Redis `coupon:*` 키를 지운다** |
 
@@ -61,12 +61,8 @@ API (`local` 프로필에서만 등록, 인증 없음)
 
 모든 단계의 산출물: 질문과 예상 → 구현과 명령 실행 순서 → 실행 명령과 바꿔볼 조건 → 관찰 결과와 원인 → 보장 범위와 한계 → 다음 단계로 가는 이유. 정합성 테스트를 먼저 하고 성능은 그다음에 잰다. 장애 실험과 정상 성능 결과는 따로 적는다.
 
-### 2단계: 낙관적 락과 비관적 락
-- 비관적 락: 기존 `PessimisticIssueCouponService`(`findByCouponIdForUpdate` → 중복 확인 → `increaseIssueAmount`)를 그대로 비교 대상으로 쓴다. 락 획득·대기·해제 시점을 `sys.innodb_lock_waits` 와 진입점 기록으로 본다.
-- 낙관적 락: `Coupon` 에 `@Version` 을 넣지 않는다. 같은 `coupons` 테이블에 매핑한 별도 엔티티(버전 컬럼 포함)를 두어 1단계 구현이 바뀌지 않게 한다.
-- 재시도 없음 vs 제한된 재시도(횟수·지연 상한, 매번 새 트랜잭션과 최신 데이터). 기존 `@Retry`/`OptimisticLockRetryAspect` 는 호출처가 없고 1000회·100ms 고정이라 그대로 쓰지 않는다. 이 단계에서 검토 후 정리한다.
-- 측정: 충돌률, 재시도 횟수 분포, 락 대기, 최종 성공 건수, 지연, 순서 역전, 같은 요청의 반복 실패.
-- 벌크 UPDATE(`increaseIssuedCount`)가 버전 검사를 건너뛰는지 확인한다.
+### 2단계: 낙관적 락과 비관적 락 (완료)
+- [02-optimistic-pessimistic.md](02-optimistic-pessimistic.md). 기존 `@Retry`/`OptimisticLockRetryAspect` 는 쓰지 않고 삭제했다(이유는 2단계 문서 2절).
 
 ### 3단계: Redis Transaction 과 Lua
 - 현재 `CouponIssuedRedisRepository.checkAndRegister` 는 `MULTI → SCARD, SADD (큐에 쌓임) → EXEC` 후 **Java 에서** 결과를 보고, 품절이면 **별도 명령** `SREM` 을 보낸다. 묶어서 실행하는 것과 조건 검사·변경을 한 번에 하는 것의 차이를 여기서 재현한다(EXEC 와 SREM 사이의 동시 요청, 그 사이 프로세스 종료).
@@ -99,14 +95,17 @@ API (`local` 프로필에서만 등록, 인증 없음)
 |---|---|
 | `IsolationIssueCouponService` | 1단계 구현 (신규). RC·RR·SERIALIZABLE, 변형 실험용 `duplicateCheck` |
 | `Lab/*` | 실험 API, 진입점 요청 기록(`IssueRequestLog`), 결과 분류(`IssueOutcome`) (신규) |
-| `CouponIssueStrategy` | 방식 선택 값으로 재사용, `READ_COMMITTED`·`REPEATABLE_READ`·`SERIALIZABLE` 추가 |
+| `CouponIssueStrategy` | 방식 선택 값으로 재사용, `READ_COMMITTED`·`REPEATABLE_READ`·`SERIALIZABLE`·`OPTIMISTIC`·`OPTIMISTIC_RETRY` 추가 |
+| `VersionedCoupon`, `VersionedCouponRepository` | 2단계 낙관적 락 전용 매핑 (신규). 같은 `coupons` 테이블, `version bigint default 0 not null` |
+| `OptimisticIssueCouponService` | 2단계 구현 (신규). 재시도 없음 / 버전 충돌만 제한된 재시도 |
 | 비관적·Redis·Event 서비스 | `MemberDetails` 대신 `memberId` 를 받는다 (실험 API 에서 호출하기 위해) |
 | `GlobalControllerAdvice`, `ErrorCode` | 잘못된 입력 400, UNIQUE 위반 409, 락 실패 503, 없는 경로 404 (이전에는 모두 500). 인증·회원가입용 핸들러와 코드 제거 |
 | `build.gradle` | thymeleaf(템플릿 없음), security, jwt 의존성 제거 |
 | `Member`, `MemberRepository` | 비밀번호 인코딩과 이메일/이름 조회 제거. 컬럼은 유지 |
 | `IssueCouponService`, `CouponService` | 요청 바디로 회원을 바꾸던 오버로드, 쿠폰 조회 메서드 제거 |
 | `docker-compose.yml` | app 의 `JWT_SECRET_KEY` 제거 (나머지 미커밋 변경 그대로) |
-| 테스트 공통 지원 | 회원을 회원가입(BCrypt) 대신 리포지토리로 저장, `local` 프로필, Redis db 1. 1단계 순서 고정·동시 요청 장치는 `IsolationExperimentSupport` |
+| 테스트 공통 지원 | 회원을 회원가입(BCrypt) 대신 리포지토리로 저장, `local` 프로필, Redis db 1. 순서 고정·동시 요청 장치는 `ConcurrencyExperimentSupport` (1·2단계 공용) |
+| `OptimisticPessimisticLockTest` | 2단계 순서 고정, 버전 검사 우회, CATS 락 부여 순서, 동시 요청 비교 |
 | `IsolationLockSettingsExperimentTest` | 데드락 감지·락 대기 시간 변형. MySQL 전역 설정을 바꾸므로 `LAB_CHANGE_MYSQL_GLOBALS=true` 일 때만 실행 |
 | `LabControllerTest` | 삭제한 컨트롤러 통합 테스트가 보던 방식별 성공·중복·품절 응답 형식을 모든 방식에 대해 확인 |
 | `performance/k6/coupon-issue.js`, `performance/README.md` | JWT 토큰 대신 실험 API 사용 |
@@ -114,11 +113,10 @@ API (`local` 프로필에서만 등록, 인증 없음)
 ### 유지
 | 대상 | 이유 |
 |---|---|
-| `PessimisticIssueCouponService`, `findByCouponIdForUpdate` | 2단계 비교 기준 |
+| `PessimisticIssueCouponService`, `findByCouponIdForUpdate` | 2단계 비관적 락 비교 대상 (변경 없음) |
 | `IssueCouponService`, `CouponIssuedRedisRepository`, `increaseIssuedCount` | 3단계 기준선 |
 | `EventIssueCouponService`, `CouponIssueEventListener`, `AsyncConfig` | 4단계 기준선 (미커밋 변경 그대로) |
 | `CouponIssueMetrics`, `monitoring/` | Grafana 대시보드가 사용 |
-| `@Retry`, `OptimisticLockRetryAspect` | 호출처 없음. 2단계에서 검토 후 정리 |
 | `Member` 의 email/password/role 컬럼 | 기존 DB 볼륨의 NOT NULL 컬럼과 맞추기 위해 |
 | `performance/sql/consistency-check.sql` | 결과 API 를 원시 SQL 로 교차 확인 |
 | `performance/scripts/aggregate-k6-results.js` | 이전 결과 문서 생성기. 실행하면 `latest-summary.md` 를 덮어써서 이번에는 실행하지 않음 |
@@ -135,3 +133,9 @@ API (`local` 프로필에서만 등록, 인증 없음)
 | `RedisConfig` | 쓰이지 않는 `RedisTemplate<String, Object>` 빈, `spring.data.redis.database`·`password` 를 무시함. Boot 자동 설정으로 대체 |
 | `MemberServiceTest`, `IssueCouponServiceTest`, `IssueCouponControllerIntegrationTest` | 회원가입 테스트 / `RedisIssueCouponServiceTest` 와 중복 / `LabControllerTest` 가 대체 |
 | `performance/scripts/generate-jwt-tokens.js`, `performance/sql/reset-and-seed.sql` | 실험 API 의 회원·쿠폰 준비로 대체 |
+
+### 삭제 (2026-10-17)
+
+| 대상 | 이유 |
+|---|---|
+| `@Retry`, `OptimisticLockRetryAspect` | 호출처 없음. 최대 1000회 × 100ms 고정 지연. 2단계 `OptimisticIssueCouponService.issueWithRetry` 가 대체 |

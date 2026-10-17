@@ -23,7 +23,7 @@ LAB_CHANGE_MYSQL_GLOBALS=true ./gradlew test --tests "*.IsolationLockSettingsExp
 ```
 
 > 통합 테스트(`@SpringBootTest`)는 MySQL과 Redis가 로컬에서 실행 중이어야 한다. 테스트는 `CouponToyProject_test` DB와 Redis db 1을 쓴다.
-> 1단계 실행 기록은 `build/lab/stage1-isolation.md`, `build/lab/stage1-lock-settings.md` 에 남는다. 학습 단계 문서는 `docs/learning/`.
+> 단계별 실행 기록은 `build/lab/stage1-isolation.md`, `build/lab/stage1-lock-settings.md`, `build/lab/stage2-lock.md` 에 남는다. 학습 단계 문서는 `docs/learning/`.
 
 ### Infrastructure (Docker)
 ```bash
@@ -46,7 +46,7 @@ docker build -t docker-coupon .
 
 - **Member** – 실험용 회원 엔티티 (인증 없음. email/password/role 컬럼은 기존 DB 스키마 호환용)
 - **Coupon** – 쿠폰 엔티티와 생성
-- **CouponIssue** – 쿠폰 발급. 학습 단계별 비교 구현 (`IsolationIssueCouponService`, `PessimisticIssueCouponService`, `IssueCouponService`(Redis), `EventIssueCouponService`)
+- **CouponIssue** – 쿠폰 발급. 학습 단계별 비교 구현 (`IsolationIssueCouponService`, `PessimisticIssueCouponService`, `OptimisticIssueCouponService`, `IssueCouponService`(Redis), `EventIssueCouponService`). 낙관적 락은 같은 `coupons` 테이블에 매핑한 `VersionedCoupon`(@Version)만 쓴다. `Coupon` 에는 @Version 을 넣지 않는다
 - **Lab** – `local` 프로필 전용 실험 API(`/lab/**`, 인증 없음). 데이터 준비, 방식 선택 발급, 결과 조회, 초기화. 단일 진입점 `LabService.issue()` 가 도착 순서와 결과를 기록
 
 ### API Endpoints
@@ -96,8 +96,7 @@ IssueCouponService.issueCoupon()
   - 400: 입력 검증·파싱 오류
   - 404: `CouponNotFoundException`, `MemberNotFoundException`, 없는 경로
   - 409: `CouponSoldOutException`, `IsAlreadyIssued`, `DataIntegrityViolationException`(UNIQUE 위반)
-  - 503: `PessimisticLockingFailureException`(데드락, 락 대기 시간 초과)
-- **AOP**: `@Retry` 어노테이션 + `OptimisticLockRetryAspect` (호출처 없음, 2단계에서 검토)
+  - 503: `PessimisticLockingFailureException`(데드락, 락 대기 시간 초과), `OptimisticLockingFailureException`(버전 충돌)
 
 ### Tech Stack
 - Java 17, Spring Boot 3.4.1, Spring Data JPA, Spring Data Redis, Lombok
