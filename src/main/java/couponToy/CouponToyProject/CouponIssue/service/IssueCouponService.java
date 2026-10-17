@@ -2,7 +2,6 @@ package couponToy.CouponToyProject.CouponIssue.service;
 
 import couponToy.CouponToyProject.Coupon.model.Coupon;
 import couponToy.CouponToyProject.Coupon.repository.CouponRepository;
-import couponToy.CouponToyProject.CouponIssue.dto.IssueCouponRequest;
 import couponToy.CouponToyProject.CouponIssue.dto.IssueCouponResponse;
 import couponToy.CouponToyProject.CouponIssue.model.IssueCoupon;
 import couponToy.CouponToyProject.CouponIssue.repository.CouponIssuedRedisRepository;
@@ -14,7 +13,6 @@ import couponToy.CouponToyProject.global.exception.CouponNotFoundException;
 import couponToy.CouponToyProject.global.exception.CouponSoldOutException;
 import couponToy.CouponToyProject.global.exception.IsAlreadyIssued;
 import couponToy.CouponToyProject.global.exception.MemberNotFoundException;
-import couponToy.CouponToyProject.global.security.MemberDetails;
 import io.micrometer.core.instrument.Timer;
 import org.springframework.dao.DataIntegrityViolationException;
 import lombok.RequiredArgsConstructor;
@@ -32,19 +30,7 @@ public class IssueCouponService {
     private final CouponIssueMetrics metrics;
 
     @Transactional
-    public IssueCouponResponse issueCoupon(IssueCouponRequest issueCouponRequest, MemberDetails memberDetails, Long couponId) {
-        Long userId = issueCouponRequest != null && issueCouponRequest.getMemberId() != null
-                ? issueCouponRequest.getMemberId()
-                : memberDetails.getMemberId();
-        return issueCoupon(userId, couponId);
-    }
-
-    @Transactional
-    public IssueCouponResponse issueCoupon(MemberDetails memberDetails, Long couponId) {
-        return issueCoupon(memberDetails.getMemberId(), couponId);
-    }
-
-    private IssueCouponResponse issueCoupon(Long userId, Long couponId) {
+    public IssueCouponResponse issueCoupon(Long userId, Long couponId) {
         CouponIssueStrategy strategy = CouponIssueStrategy.REDIS_TRANSACTIONAL;
         Timer.Sample sample = metrics.start();
 

@@ -12,7 +12,6 @@ import couponToy.CouponToyProject.global.exception.CouponNotFoundException;
 import couponToy.CouponToyProject.global.exception.CouponSoldOutException;
 import couponToy.CouponToyProject.global.exception.IsAlreadyIssued;
 import couponToy.CouponToyProject.global.exception.MemberNotFoundException;
-import couponToy.CouponToyProject.global.security.MemberDetails;
 import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,14 +27,12 @@ public class PessimisticIssueCouponService {
     private final CouponIssueMetrics metrics;
 
     @Transactional
-    public IssueCouponResponse issueCoupon(MemberDetails memberDetails, Long couponId) {
+    public IssueCouponResponse issueCoupon(Long memberId, Long couponId) {
         CouponIssueStrategy strategy = CouponIssueStrategy.PESSIMISTIC;
         Timer.Sample sample = metrics.start();
 
         try {
             IssueCouponResponse response = metrics.recordDb(strategy, () -> {
-                Long memberId = memberDetails.getMemberId();
-
                 Member member = memberRepository.findById(memberId)
                         .orElseThrow(() -> new MemberNotFoundException(ErrorCode.NOT_FOUND_MEMBER));
 

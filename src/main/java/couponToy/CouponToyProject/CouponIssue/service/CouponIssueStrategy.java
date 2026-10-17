@@ -6,6 +6,8 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor
 public enum CouponIssueStrategy {
+    REPEATABLE_READ("repeatable_read"),
+    SERIALIZABLE("serializable"),
     PESSIMISTIC("pessimistic"),
     REDIS_TRANSACTIONAL("redis_transactional"),
     REDIS_EVENT("redis_event");

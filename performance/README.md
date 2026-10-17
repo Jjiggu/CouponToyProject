@@ -1,98 +1,56 @@
 # Coupon Issue Performance Tests
 
-This directory contains the k6 and SQL assets for comparing:
+`k6/coupon-issue.js` 는 실험 API(`/lab`, `local` 프로필)를 호출한다. 실행 한 번마다 setup 에서 회원과 쿠폰을 새로 만들고, teardown 에서 `GET /lab/coupons/{id}/result` 와 접수/발급 완료 처리량을 출력한다. 단계별 실험 조건은 [docs/learning](../docs/learning/README.md) 을 따른다.
 
-- `pessimistic`: `POST /coupons/issue/{couponId}/pessimistic`
-- `redis-transactional`: `POST /coupons/issue/{couponId}/redis-transactional`
-- `redis-event`: `POST /coupons/issue/{couponId}/redis-event`
-
-## 1. Start the stack
+## 1. 앱 실행
 
 ```bash
-docker compose up -d --build
+docker compose up -d mysql redis
+
+# 기존 DB 와 Redis db 0 을 건드리지 않도록 별도 스키마와 Redis db 를 쓴다.
+SERVER_PORT=18080 \
+SPRING_DATASOURCE_URL='jdbc:mysql://localhost:3306/CouponToyProject_lab?createDatabaseIfNotExist=true' \
+SPRING_DATA_REDIS_DATABASE=2 SPRING_JPA_SHOW_SQL=false SPRING_JPA_PROPERTIES_HIBERNATE_SHOW_SQL=false \
+./gradlew bootRun
 ```
 
-The compose file pins local resources for the main bottleneck targets:
+`docker-compose.yml` 의 app 컨테이너는 `SPRING_PROFILES_ACTIVE=docker` 라서 실험 API 가 등록되지 않는다.
 
-- app: `1 CPU`, `1GB`
-- MySQL: `1 CPU`, `1GB`
-- Redis: `0.5 CPU`, `512MB`
+## 2. k6 실행
 
-## 2. Seed DB and tokens
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `BASE_URL` | `http://localhost:8080` | |
+| `METHOD` | `SERIALIZABLE` | `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `REDIS_TRANSACTIONAL`, `REDIS_EVENT` |
+| `SCENARIO` | `smoke` | `burst`, `duplicate`, `smoke`, `soldout`, `step`, `spike`, `soak` |
+| `TOTAL_COUNT` | `100` | 쿠폰 수량 |
+| `MEMBERS` | `1000` | setup 에서 만들 회원 수 |
+| `ITERATIONS`, `VUS` | 시나리오별 | `burst`, `duplicate` 의 총 요청 수와 동시 VU |
+| `DUPLICATE_USERS` | `100` | `duplicate` 에서 요청을 나눠 쓸 회원 수 |
+| `WARMUP` | `0` | 별도 쿠폰에 같은 방식으로 먼저 보낼 요청 수 |
 
 ```bash
-docker exec -i coupon-toy-mysql mysql -uroot -p'7815aA!@' CouponToyProject < performance/sql/reset-and-seed.sql
-mkdir -p performance/data
-node performance/scripts/generate-jwt-tokens.js 100000 > performance/data/tokens.csv
+BASE_URL=http://localhost:18080 METHOD=SERIALIZABLE SCENARIO=burst \
+TOTAL_COUNT=100 MEMBERS=1000 ITERATIONS=1000 VUS=100 WARMUP=200 \
+k6 run --summary-export performance/results/stage1-burst-serializable.json performance/k6/coupon-issue.js
 ```
 
-The seed script creates three coupons:
+- 상태 코드: 성공 201, 비동기 접수 202, 거절(품절·중복) 409, 트랜잭션 실패(데드락·락 대기 초과) 503
+- `coupon_issue_http_duration` 은 발급 요청만의 응답 시간이다. `http_req_duration` 에는 setup/teardown 요청이 섞인다.
+- `REDIS_EVENT` 는 teardown 시점에 DB 처리가 끝나지 않았을 수 있다. 결과 API 를 다시 조회한다.
 
-- coupon `1`: pessimistic
-- coupon `2`: redis-transactional
-- coupon `3`: redis-event
+## 3. 정합성 교차 확인
 
-Before each Redis strategy run, reset the Redis admission keys:
+결과 API 의 `checks` 를 원시 SQL 로 다시 확인하려면 `sql/consistency-check.sql` 의 `@coupon_id`, `@redis_scard` 를 바꿔 실행한다.
 
 ```bash
-docker exec coupon-toy-redis redis-cli DEL \
-  coupon:issued:2 coupon:total:2 \
-  coupon:issued:3 coupon:total:3
+docker exec coupon-toy-redis redis-cli -n 2 SCARD coupon:issued:{couponId}
+docker exec -i coupon-toy-mysql mysql -uroot -p'7815aA!@' CouponToyProject_lab < performance/sql/consistency-check.sql
 ```
 
-## 3. Run k6
+## 4. 병목 지표
 
-Smoke:
-
-```bash
-k6 run -e STRATEGY=pessimistic -e COUPON_ID=1 -e SCENARIO=smoke performance/k6/coupon-issue.js
-k6 run -e STRATEGY=redis-transactional -e COUPON_ID=2 -e SCENARIO=smoke performance/k6/coupon-issue.js
-k6 run -e STRATEGY=redis-event -e COUPON_ID=3 -e SCENARIO=smoke performance/k6/coupon-issue.js
-```
-
-Step load:
-
-```bash
-k6 run -e STRATEGY=pessimistic -e COUPON_ID=1 -e SCENARIO=step performance/k6/coupon-issue.js
-k6 run -e STRATEGY=redis-transactional -e COUPON_ID=2 -e SCENARIO=step performance/k6/coupon-issue.js
-k6 run -e STRATEGY=redis-event -e COUPON_ID=3 -e SCENARIO=step performance/k6/coupon-issue.js
-```
-
-Other scenarios:
-
-```bash
-k6 run -e SCENARIO=spike -e STRATEGY=redis-event -e COUPON_ID=3 performance/k6/coupon-issue.js
-k6 run -e SCENARIO=soak -e RATE=700 -e STRATEGY=redis-event -e COUPON_ID=3 performance/k6/coupon-issue.js
-k6 run -e SCENARIO=soldout -e STRATEGY=redis-event -e COUPON_ID=3 performance/k6/coupon-issue.js
-k6 run -e SCENARIO=duplicate -e STRATEGY=redis-event -e COUPON_ID=3 performance/k6/coupon-issue.js
-```
-
-For `redis-event`, wait until `coupon_issue_event_inflight` returns `0` before running consistency checks.
-
-## 4. Check consistency
-
-For Redis strategies, first capture Redis SCARD:
-
-```bash
-docker exec coupon-toy-redis redis-cli SCARD coupon:issued:3
-```
-
-Then edit `@coupon_id` and `@redis_scard` in `performance/sql/consistency-check.sql`, and run:
-
-```bash
-docker exec -i coupon-toy-mysql mysql -uroot -p'7815aA!@' CouponToyProject < performance/sql/consistency-check.sql
-```
-
-The result is valid only when:
-
-- `issue_rows <= total_count`
-- duplicate query returns no rows
-- `issued_count = issue_rows`
-- Redis `SCARD = issue_rows` for Redis strategies
-
-## 5. Bottleneck evidence
-
-Use Grafana `Coupon Local Monitoring` and Prometheus with these signals:
+Grafana `Coupon Local Monitoring` 과 Prometheus 에서 아래 신호를 본다. 앱 지표는 비관적 락·Redis·Event 방식에서만 기록된다(격리 수준 방식은 결과 API 의 `latencyMs`, `innodbLockMetricsDelta` 를 본다).
 
 ```promql
 histogram_quantile(0.95, sum(rate(coupon_issue_duration_seconds_bucket[1m])) by (le, strategy))
@@ -106,26 +64,6 @@ mysql_global_status_innodb_row_lock_waits
 rate(redis_commands_processed_total[1m])
 ```
 
+## 5. 이전 결과 리포트
 
-## 6. Generate a Markdown report
-
-Save k6 summary JSON files with `--summary-export`:
-
-```bash
-mkdir -p performance/results
-k6 run --summary-export performance/results/smoke-pessimistic.json -e STRATEGY=pessimistic -e COUPON_ID=1 -e SCENARIO=smoke performance/k6/coupon-issue.js
-k6 run --summary-export performance/results/smoke-redis-transactional.json -e STRATEGY=redis-transactional -e COUPON_ID=2 -e SCENARIO=smoke performance/k6/coupon-issue.js
-k6 run --summary-export performance/results/smoke-redis-event.json -e STRATEGY=redis-event -e COUPON_ID=3 -e SCENARIO=smoke performance/k6/coupon-issue.js
-```
-
-Aggregate them into a readable Markdown report:
-
-```bash
-node performance/scripts/aggregate-k6-results.js
-```
-
-Default output:
-
-```text
-docs/coupon-performance-test/results/latest-summary.md
-```
+`scripts/aggregate-k6-results.js` 는 이전 구조(JWT, `pessimistic`/`redis-transactional`/`redis-event` 파일명)의 결과를 집계해 `docs/coupon-performance-test/results/latest-summary.md` 를 **덮어쓴다**. 새 실험 결과는 `docs/learning/results/` 에 실행 조건과 함께 남긴다.

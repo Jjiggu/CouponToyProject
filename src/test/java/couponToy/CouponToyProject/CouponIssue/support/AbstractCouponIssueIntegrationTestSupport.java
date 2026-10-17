@@ -6,18 +6,21 @@ import couponToy.CouponToyProject.Coupon.model.Coupon;
 import couponToy.CouponToyProject.Coupon.repository.CouponRepository;
 import couponToy.CouponToyProject.Coupon.service.CouponService;
 import couponToy.CouponToyProject.CouponIssue.repository.IssueCouponRepository;
-import couponToy.CouponToyProject.Member.dto.MemberSignUpRequest;
-import couponToy.CouponToyProject.Member.dto.MemberSignUpResponse;
 import couponToy.CouponToyProject.Member.model.Member;
 import couponToy.CouponToyProject.Member.repository.MemberRepository;
-import couponToy.CouponToyProject.Member.service.MemberService;
+import couponToy.CouponToyProject.global.constant.Role;
 import org.junit.jupiter.api.AfterEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
 
 import java.util.Set;
 import java.util.UUID;
 
+// 테스트는 Redis db 1 을 쓴다. 로컬 실험 데이터(db 0)를 cleanup 이 지우지 않게 하기 위해서다.
+@ActiveProfiles("local")
+@TestPropertySource(properties = "spring.data.redis.database=1")
 public abstract class AbstractCouponIssueIntegrationTestSupport {
 
     @Autowired
@@ -28,9 +31,6 @@ public abstract class AbstractCouponIssueIntegrationTestSupport {
 
     @Autowired
     protected IssueCouponRepository issueCouponRepository;
-
-    @Autowired
-    protected MemberService memberService;
 
     @Autowired
     protected MemberRepository memberRepository;
@@ -55,14 +55,12 @@ public abstract class AbstractCouponIssueIntegrationTestSupport {
     }
 
     protected Member createMember(int index) {
-        MemberSignUpRequest request = MemberSignUpRequest.builder()
+        return memberRepository.save(Member.builder()
                 .email("perf-" + index + "-" + UUID.randomUUID() + "@example.com")
-                .password("Passw0rd!")
-                .name(buildAlphabeticName(index))
-                .build();
-
-        MemberSignUpResponse response = memberService.signUpMember(request);
-        return memberRepository.findById(response.getMemberId()).orElseThrow();
+                .password("-")
+                .name("perf" + index)
+                .role(Role.MEMBER)
+                .build());
     }
 
     private void clearRedisKeys(String pattern) {
@@ -70,17 +68,5 @@ public abstract class AbstractCouponIssueIntegrationTestSupport {
         if (keys != null && !keys.isEmpty()) {
             redisTemplate.delete(keys);
         }
-    }
-
-    private String buildAlphabeticName(int index) {
-        StringBuilder suffix = new StringBuilder();
-        int value = index;
-
-        do {
-            suffix.append((char) ('a' + (value % 26)));
-            value = value / 26 - 1;
-        } while (value >= 0);
-
-        return "Perf" + suffix.reverse();
     }
 }

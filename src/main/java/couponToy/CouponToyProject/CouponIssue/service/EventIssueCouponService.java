@@ -9,7 +9,6 @@ import couponToy.CouponToyProject.global.constant.ErrorCode;
 import couponToy.CouponToyProject.global.exception.CouponNotFoundException;
 import couponToy.CouponToyProject.global.exception.CouponSoldOutException;
 import couponToy.CouponToyProject.global.exception.IsAlreadyIssued;
-import couponToy.CouponToyProject.global.security.MemberDetails;
 import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -29,10 +28,9 @@ public class EventIssueCouponService {
     private final CouponIssueMetrics metrics;
 
     @Transactional
-    public IssueCouponResponse issueCoupon(MemberDetails memberDetails, Long couponId) {
+    public IssueCouponResponse issueCoupon(Long userId, Long couponId) {
         CouponIssueStrategy strategy = CouponIssueStrategy.REDIS_EVENT;
         Timer.Sample sample = metrics.start();
-        Long userId = memberDetails.getMemberId();
 
         try {
             int totalCount = findTotalCount(strategy, couponId);

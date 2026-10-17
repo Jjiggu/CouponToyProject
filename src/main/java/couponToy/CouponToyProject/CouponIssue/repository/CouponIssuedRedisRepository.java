@@ -75,6 +75,14 @@ public class CouponIssuedRedisRepository {
         return Optional.ofNullable(value).map(Integer::parseInt);
     }
 
+    /**
+     * Redis SET 에 등록된 사용자 수(SCARD). 키가 없으면 0.
+     */
+    public long issuedCount(Long couponId) {
+        Long size = redisTemplate.opsForSet().size(buildIssuedKey(couponId));
+        return size == null ? 0 : size;
+    }
+
     private String buildIssuedKey(Long couponId) {
         return ISSUED_KEY_PREFIX + couponId;
     }
