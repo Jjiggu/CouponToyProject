@@ -38,6 +38,7 @@ k6 run --summary-export performance/results/stage1-burst-serializable.json perfo
 
 - 상태 코드: 성공 201, 비동기 접수 202, 거절(품절·중복) 409, 트랜잭션 실패(데드락·락 대기 초과·버전 충돌) 503
 - `OPTIMISTIC_RETRY` 의 재시도 상한과 지연은 앱 쪽 설정이다. bootRun 앞에 `COUPON_ISSUE_OPTIMISTIC_MAX_ATTEMPTS`(기본 5), `COUPON_ISSUE_OPTIMISTIC_BACKOFF_BASE_MS`(10), `COUPON_ISSUE_OPTIMISTIC_BACKOFF_MAX_MS`(100) 를 붙인다
+- `REDIS_WATCH` 의 재시도 상한은 `COUPON_ISSUE_REDIS_WATCH_MAX_ATTEMPTS`(기본 10). 커넥션 풀이 없으면 `REDIS_MULTI_EXEC`·`REDIS_WATCH` 는 요청(시도)마다 새 Redis 연결을 맺는다. 이어서 실행할 때는 호스트의 TIME_WAIT 가 빠질 때까지 기다린다(`netstat -an -p tcp | grep -c TIME_WAIT`, 3단계 문서 4-8)
 - `coupon_issue_http_duration` 은 발급 요청만의 응답 시간이다. `http_req_duration` 에는 setup/teardown 요청이 섞인다.
 - `REDIS_EVENT` 는 teardown 시점에 DB 처리가 끝나지 않았을 수 있다. 결과 API 를 다시 조회한다.
 
