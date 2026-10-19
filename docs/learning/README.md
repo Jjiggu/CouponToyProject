@@ -6,7 +6,7 @@
 |---|---|---|
 | 1 | [명시적 락 없이 격리 수준 비교](01-isolation-level.md) | 구현·실행 완료 (변형 실험 포함) |
 | 2 | [낙관적 락과 비관적 락](02-optimistic-pessimistic.md) | 구현·실행 완료 |
-| 3 | Redis Transaction 과 Lua | 계획 |
+| 3 | [Redis 예약: SET 명령만 / MULTI/EXEC / WATCH / Lua](03-redis-transaction-lua.md) | 구현·실행 완료 |
 | 4 | Spring @Async | 계획 |
 | 5 | Redis Pub/Sub | 계획 |
 | 6 | Redis Streams | 계획 |
@@ -46,7 +46,7 @@ API (`local` 프로필에서만 등록, 인증 없음)
 |---|---|---|---|
 | POST | `/lab/members` | `{"count": 1000}` | 회원 일괄 생성, `firstMemberId`~`lastMemberId` 반환 |
 | POST | `/lab/coupons` | `{"name": "s1", "totalCount": 100}` | 쿠폰 생성. 쿠폰마다 요청 기록과 InnoDB 락 카운터 기준값을 새로 잡는다 |
-| POST | `/lab/coupons/{id}/issue` | `{"memberId": 1, "method": "SERIALIZABLE"}` | 방식 선택 발급. `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `OPTIMISTIC`, `OPTIMISTIC_RETRY`, `REDIS_TRANSACTIONAL`, `REDIS_EVENT`. 격리 수준 방식은 `"duplicateCheck": false` 로 중복 확인 SELECT 를 뺄 수 있다 |
+| POST | `/lab/coupons/{id}/issue` | `{"memberId": 1, "method": "SERIALIZABLE"}` | 방식 선택 발급. `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `OPTIMISTIC`, `OPTIMISTIC_RETRY`, `REDIS_SET_ONLY`, `REDIS_MULTI_EXEC`, `REDIS_WATCH`, `REDIS_LUA`, `REDIS_EVENT`. 격리 수준 방식은 `"duplicateCheck": false` 로 중복 확인 SELECT 를 뺄 수 있다 |
 | GET | `/lab/coupons/{id}/result` | | 검증 기준, 요청 결과, 순서, 서버 측 지연, 락 카운터 변화량 |
 | DELETE | `/lab/data` | | **설정된 DB 의 `coupon_issues`·`coupons`·`members` 를 TRUNCATE 하고 Redis `coupon:*` 키를 지운다** |
 
@@ -64,11 +64,8 @@ API (`local` 프로필에서만 등록, 인증 없음)
 ### 2단계: 낙관적 락과 비관적 락 (완료)
 - [02-optimistic-pessimistic.md](02-optimistic-pessimistic.md). 기존 `@Retry`/`OptimisticLockRetryAspect` 는 쓰지 않고 삭제했다(이유는 2단계 문서 2절).
 
-### 3단계: Redis Transaction 과 Lua
-- 현재 `CouponIssuedRedisRepository.checkAndRegister` 는 `MULTI → SCARD, SADD (큐에 쌓임) → EXEC` 후 **Java 에서** 결과를 보고, 품절이면 **별도 명령** `SREM` 을 보낸다. 묶어서 실행하는 것과 조건 검사·변경을 한 번에 하는 것의 차이를 여기서 재현한다(EXEC 와 SREM 사이의 동시 요청, 그 사이 프로세스 종료).
-- Lua 로 중복 확인·수량 확인·예약을 한 번에 실행하고, WATCH 는 필요할 때만 작은 실험으로 다룬다.
-- Redis 예약 상태와 DB 발급 상태를 따로 검증한다. Redis 성공 후 DB 실패, 예약 취소와 재요청 경합을 본다.
-- 현재 `IssueCouponService` 의 DB 단계는 README 에 적힌 `FOR UPDATE` 가 아니라 조건부 UPDATE(`issued_count < total_count`) + UNIQUE 제약이다. 이것이 막는 오류와, DB 가 막았다고 Redis 구현이 맞다고 볼 수 없는 이유를 같은 DB 저장 조건에서 비교한다. Redis 호출이 DB 트랜잭션 안에 있지만 Redis 는 롤백되지 않는다.
+### 3단계: Redis Transaction 과 Lua (완료)
+- [03-redis-transaction-lua.md](03-redis-transaction-lua.md). 4~6단계 공통 기준: Lua 예약(`reserveWithLua`) + `IssueConfirmService`.
 
 ### 4~6단계 공통 조건
 3단계에서 검증한 예약 로직과 같은 DB 확정 로직을 그대로 쓰고, 작업을 전달·실행·복구하는 방식만 바꾼다. 공통 로직을 바꾸면 이유와 비교 조건 변화를 기록한다. 모든 조합을 만들지 않는다.
@@ -103,6 +100,10 @@ API (`local` 프로필에서만 등록, 인증 없음)
 | `build.gradle` | thymeleaf(템플릿 없음), security, jwt 의존성 제거 |
 | `Member`, `MemberRepository` | 비밀번호 인코딩과 이메일/이름 조회 제거. 컬럼은 유지 |
 | `IssueCouponService`, `CouponService` | 요청 바디로 회원을 바꾸던 오버로드, 쿠폰 조회 메서드 제거 |
+| `IssueCouponService` → `RedisIssueCouponService`, `IssueConfirmService` | 3단계에서 다시 작성. Redis 예약을 DB 트랜잭션 밖으로, DB 확정을 별도 트랜잭션으로, UNIQUE 위반 시 SREM 하지 않음 (3단계 문서 2절) |
+| `CouponIssuedRedisRepository` | 예약 방식 4가지(SET 명령만, MULTI/EXEC, WATCH, Lua), 회원 목록 조회 |
+| `FailurePoints` | 장애 실험용 실패 지점 (신규). 평소에는 아무 일도 하지 않음 |
+| `RedisReservationTest` | 3단계 끼어들기, SREM 전 틈, 예약 후 실패·종료, 보상 경합, 동시 요청 비교 |
 | `docker-compose.yml` | app 의 `JWT_SECRET_KEY` 제거 (나머지 미커밋 변경 그대로) |
 | 테스트 공통 지원 | 회원을 회원가입(BCrypt) 대신 리포지토리로 저장, `local` 프로필, Redis db 1. 순서 고정·동시 요청 장치는 `ConcurrencyExperimentSupport` (1·2단계 공용) |
 | `OptimisticPessimisticLockTest` | 2단계 순서 고정, 버전 검사 우회, CATS 락 부여 순서, 동시 요청 비교 |
@@ -114,7 +115,7 @@ API (`local` 프로필에서만 등록, 인증 없음)
 | 대상 | 이유 |
 |---|---|
 | `PessimisticIssueCouponService`, `findByCouponIdForUpdate` | 2단계 비관적 락 비교 대상 (변경 없음) |
-| `IssueCouponService`, `CouponIssuedRedisRepository`, `increaseIssuedCount` | 3단계 기준선 |
+| `CouponIssuedRedisRepository.checkAndRegister`, `increaseIssuedCount` | 4단계 기준선(`EventIssueCouponService`)이 그대로 쓴다 |
 | `EventIssueCouponService`, `CouponIssueEventListener`, `AsyncConfig` | 4단계 기준선 (미커밋 변경 그대로) |
 | `CouponIssueMetrics`, `monitoring/` | Grafana 대시보드가 사용 |
 | `Member` 의 email/password/role 컬럼 | 기존 DB 볼륨의 NOT NULL 컬럼과 맞추기 위해 |

@@ -23,7 +23,7 @@ LAB_CHANGE_MYSQL_GLOBALS=true ./gradlew test --tests "*.IsolationLockSettingsExp
 ```
 
 > 통합 테스트(`@SpringBootTest`)는 MySQL과 Redis가 로컬에서 실행 중이어야 한다. 테스트는 `CouponToyProject_test` DB와 Redis db 1을 쓴다.
-> 단계별 실행 기록은 `build/lab/stage1-isolation.md`, `build/lab/stage1-lock-settings.md`, `build/lab/stage2-lock.md` 에 남는다. 학습 단계 문서는 `docs/learning/`.
+> 단계별 실행 기록은 `build/lab/stage1-isolation.md`, `build/lab/stage1-lock-settings.md`, `build/lab/stage2-lock.md`, `build/lab/stage3-redis.md` 에 남는다. 학습 단계 문서는 `docs/learning/`.
 
 ### Infrastructure (Docker)
 ```bash
@@ -46,7 +46,7 @@ docker build -t docker-coupon .
 
 - **Member** – 실험용 회원 엔티티 (인증 없음. email/password/role 컬럼은 기존 DB 스키마 호환용)
 - **Coupon** – 쿠폰 엔티티와 생성
-- **CouponIssue** – 쿠폰 발급. 학습 단계별 비교 구현 (`IsolationIssueCouponService`, `PessimisticIssueCouponService`, `OptimisticIssueCouponService`, `IssueCouponService`(Redis), `EventIssueCouponService`). 낙관적 락은 같은 `coupons` 테이블에 매핑한 `VersionedCoupon`(@Version)만 쓴다. `Coupon` 에는 @Version 을 넣지 않는다
+- **CouponIssue** – 쿠폰 발급. 학습 단계별 비교 구현 (`IsolationIssueCouponService`, `PessimisticIssueCouponService`, `OptimisticIssueCouponService`, `RedisIssueCouponService` + `IssueConfirmService`, `EventIssueCouponService`). 낙관적 락은 같은 `coupons` 테이블에 매핑한 `VersionedCoupon`(@Version)만 쓴다. `Coupon` 에는 @Version 을 넣지 않는다
 - **Lab** – `local` 프로필 전용 실험 API(`/lab/**`, 인증 없음). 데이터 준비, 방식 선택 발급, 결과 조회, 초기화. 단일 진입점 `LabService.issue()` 가 도착 순서와 결과를 기록
 
 ### API Endpoints
@@ -58,36 +58,35 @@ docker build -t docker-coupon .
 | GET | `/lab/coupons/{couponId}/result` | 검증 기준·순서·지연·락 카운터 (local 전용) |
 | DELETE | `/lab/data` | 설정된 DB 3개 테이블 TRUNCATE + Redis `coupon:*` 삭제 (local 전용) |
 
-### Redis 발급 플로우 (`method: REDIS_TRANSACTIONAL`)
+### Redis 발급 플로우 (3단계)
 
 ```
-IssueCouponService.issueCoupon()
+RedisIssueCouponService.issue(memberId, couponId, method)   ← DB 트랜잭션 없음
 
-  [1] Redis GET coupon:total:{couponId} — 없으면 couponRepository.findById() 후 재캐싱
-
-  [2] CouponIssuedRedisRepository.checkAndRegister() — Redis MULTI/EXEC
-        SCARD coupon:issued:{couponId}  → 현재 발급 수
-        SADD  coupon:issued:{couponId} userId → 중복 체크
-        ───────────────────────────────────────
-        SADD == 0 → IsAlreadyIssued (409)          ← DB 미접근
-        SCARD >= totalCount → SREM + CouponSoldOutException (409)
-
-  [3] issueCouponRepository.save()               ← UNIQUE(coupon_id, member_id)
-        couponRepository.increaseIssuedCount()     ← 조건부 UPDATE (issued_count < total_count), 0건이면 품절
-
-  [4] 예외 발생 시 → CouponIssuedRedisRepository.remove() — Redis 롤백
+  [0] GET coupon:total:{couponId}                총수량 (없으면 DB 에서 읽어 다시 넣음)
+  [1] Redis 예약 (CouponIssuedRedisRepository)     "이미 예약됨 → 재고 소진 → 예약" 순서, 원자성만 방식별로 다름
+        REDIS_SET_ONLY    SISMEMBER, SCARD, SADD 를 따로 보냄 (명령 사이에 다른 요청이 끼어든다)
+        REDIS_MULTI_EXEC  MULTI SCARD SADD EXEC → Java 판단 → 재고 초과면 SREM
+        REDIS_WATCH       WATCH → 읽기 → MULTI SADD EXEC (키가 바뀌었으면 다시, 최대 10회)
+        REDIS_LUA         EVALSHA 한 번 (4~6단계 공통 기준)
+  [2] IssueConfirmService.confirm() — 별도 DB 트랜잭션
+        INSERT coupon_issues                     UNIQUE(coupon_id, member_id)
+        UPDATE coupons SET issued_count = issued_count + 1
+         WHERE coupon_id = ? AND issued_count < total_count   0건이면 SOLD_OUT_AT_DB
+  [3] [2] 실패 시 SREM 으로 예약을 되돌린다. UNIQUE 위반(이미 발급된 회원)은 되돌리지 않는다
 ```
 
 ### Redis Key 구조
 | 키 패턴 | 자료형 | 용도 |
 |---|---|---|
 | `coupon:total:{couponId}` | String | 쿠폰 총 발급 수량 캐시 (쿠폰 생성 시 웜업, 불변) |
-| `coupon:issued:{couponId}` | SET | 발급된 userId 집합 (중복 방지 + 수량 추적) |
+| `coupon:issued:{couponId}` | SET | 발급 자격을 예약한 회원 집합 (DB 확정 전 예약 포함, 중복 방지 + 수량 추적) |
 
 ### Concurrency Strategy
-- **Redis SET + MULTI/EXEC**: SCARD(수량 체크) + SADD(중복 방지)를 원자적으로 실행 — Redis 단계에서 대부분의 초과·중복 발급을 사전 차단
-- **DB 조건부 UPDATE + UNIQUE**: Redis 통과 후 DB 수준에서 최종 수량·중복 검증 (비관적 락은 `PessimisticIssueCouponService` 에만 있음)
-- **Redis 롤백**: DB 발급 실패 시 SREM으로 Redis 상태 복구
+- **Redis 예약**: 명령 하나는 원자적이지만 명령 사이에는 다른 요청이 끼어든다. 판단과 예약을 한 번에 하려면 Lua(또는 WATCH)를 쓴다. MULTI/EXEC 는 묶어 실행할 뿐 결과로 분기하지 못해 SREM 으로 되돌린다
+- **DB 조건부 UPDATE + UNIQUE**: Redis 통과 후 DB 수준에서 최종 수량·중복 검증. Redis 와 MySQL 은 한 트랜잭션이 아니다
+- **보상 SREM**: DB 확정 실패 시 예약을 되돌린다. 예약 뒤 프로세스가 죽으면 예약만 남는다(4~6단계 주제)
+- **실패 지점**: `global/failure/FailurePoints` — 테스트가 회원 단위로 멈춤·실패·종료 흉내를 건다. `LAB_HALT_AT=<지점>` 이면 그 지점에서 JVM 을 즉시 종료한다
 
 ### Global Infrastructure (`global` 패키지)
 - **인증 없음**: 모든 API 는 `Lab` 패키지에 있고 `@Profile("local")` 로만 등록된다

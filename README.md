@@ -12,6 +12,7 @@
 
 - [1단계: 명시적 락 없이 격리 수준 비교](docs/learning/01-isolation-level.md)
 - [2단계: 비관적 락과 낙관적 락](docs/learning/02-optimistic-pessimistic.md)
+- [3단계: Redis 예약 — SET 명령만 / MULTI/EXEC / WATCH / Lua](docs/learning/03-redis-transaction-lua.md)
 
 ## 기술 스택
 
@@ -50,7 +51,7 @@ SPRING_DATA_REDIS_DATABASE=2 ./gradlew bootRun
 |---|---|---|---|
 | POST | `/lab/members` | `{"count": 1000}` | 실험용 회원 일괄 생성 |
 | POST | `/lab/coupons` | `{"name": "s1", "totalCount": 100}` | 실험용 쿠폰 생성 |
-| POST | `/lab/coupons/{couponId}/issue` | `{"memberId": 1, "method": "SERIALIZABLE"}` | 방식 선택 발급: `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `OPTIMISTIC`, `OPTIMISTIC_RETRY`, `REDIS_TRANSACTIONAL`, `REDIS_EVENT`(202 접수). 격리 수준 방식은 `duplicateCheck: false` 가능 |
+| POST | `/lab/coupons/{couponId}/issue` | `{"memberId": 1, "method": "SERIALIZABLE"}` | 방식 선택 발급: `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `OPTIMISTIC`, `OPTIMISTIC_RETRY`, `REDIS_SET_ONLY`, `REDIS_MULTI_EXEC`, `REDIS_WATCH`, `REDIS_LUA`, `REDIS_EVENT`(202 접수). 격리 수준 방식은 `duplicateCheck: false` 가능 |
 | GET | `/lab/coupons/{couponId}/result` | | 발급 결과, 수량, 검증 기준, 순서, 지연 |
 | DELETE | `/lab/data` | | 실험 데이터 초기화 |
 
@@ -61,26 +62,22 @@ SPRING_DATA_REDIS_DATABASE=2 ./gradlew bootRun
 { "success": false, "response": null, "error": { "message": "...", "status": 409 } }
 ```
 
-## Redis 발급 플로우 (`method: REDIS_TRANSACTIONAL`, 3단계 기준선)
+## Redis 발급 플로우 (3단계)
 
 ```
-IssueCouponService.issueCoupon()
+RedisIssueCouponService.issue(memberId, couponId, method)   ← DB 트랜잭션 없음
 
-  [1] Redis GET coupon:total:{couponId}          totalCount 캐시 조회
-      └─ 캐시 미스 → DB 조회 후 재캐싱 (자가 복구)
-
-  [2] Redis MULTI/EXEC
-      SCARD coupon:issued:{couponId}             현재 발급 수
-      SADD  coupon:issued:{couponId}  {userId}   중복 등록 시도
-      ─────────────────────────────────────────
-      SADD == 0          → 409 IsAlreadyIssued   (DB 미접근)
-      SCARD >= totalCount → 409 CouponSoldOut    (SREM 후 예외)
-
-  [3] coupon_issues INSERT                       UNIQUE(coupon_id, member_id)
-      UPDATE coupons SET issued_count = issued_count + 1
-       WHERE coupon_id = ? AND issued_count < total_count   조건부 UPDATE, 0건이면 품절
-
-  [4] 예외 발생 시 → SREM (Redis 롤백)
+  [0] GET coupon:total:{couponId}                총수량 (없으면 DB 에서 읽어 다시 넣음)
+  [1] Redis 예약 (CouponIssuedRedisRepository)     "이미 예약됨 → 재고 소진 → 예약" 순서, 원자성만 방식별로 다름
+        REDIS_SET_ONLY    SISMEMBER, SCARD, SADD 를 따로 보냄 (명령 사이에 다른 요청이 끼어든다)
+        REDIS_MULTI_EXEC  MULTI SCARD SADD EXEC → Java 판단 → 재고 초과면 SREM
+        REDIS_WATCH       WATCH → 읽기 → MULTI SADD EXEC (키가 바뀌었으면 다시, 최대 10회)
+        REDIS_LUA         EVALSHA 한 번 (4~6단계 공통 기준)
+  [2] IssueConfirmService.confirm() — 별도 DB 트랜잭션
+        INSERT coupon_issues                     UNIQUE(coupon_id, member_id)
+        UPDATE coupons SET issued_count = issued_count + 1
+         WHERE coupon_id = ? AND issued_count < total_count   0건이면 SOLD_OUT_AT_DB
+  [3] [2] 실패 시 SREM 으로 예약을 되돌린다. UNIQUE 위반(이미 발급된 회원)은 되돌리지 않는다
 ```
 
 ## Redis 키
@@ -88,7 +85,7 @@ IssueCouponService.issueCoupon()
 | 키 | 자료형 | 설명 |
 |---|---|---|
 | `coupon:total:{couponId}` | String | 총 발급 수량 (쿠폰 생성 시 웜업, 불변) |
-| `coupon:issued:{couponId}` | SET | 발급된 userId 집합 |
+| `coupon:issued:{couponId}` | SET | 발급 자격을 예약한 회원 집합 (DB 확정 전 예약도 들어 있다) |
 
 ## 이전 문서 (보존용)
 
