@@ -51,7 +51,7 @@ SPRING_DATA_REDIS_DATABASE=2 ./gradlew bootRun
 |---|---|---|---|
 | POST | `/lab/members` | `{"count": 1000}` | 실험용 회원 일괄 생성 |
 | POST | `/lab/coupons` | `{"name": "s1", "totalCount": 100}` | 실험용 쿠폰 생성 |
-| POST | `/lab/coupons/{couponId}/issue` | `{"memberId": 1, "method": "SERIALIZABLE"}` | 방식 선택 발급: `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `OPTIMISTIC`, `OPTIMISTIC_RETRY`, `REDIS_SET_ONLY`, `REDIS_MULTI_EXEC`, `REDIS_WATCH`, `REDIS_LUA`, `REDIS_ASYNC`(202 접수). 격리 수준 방식은 `duplicateCheck: false` 가능 |
+| POST | `/lab/coupons/{couponId}/issue` | `{"memberId": 1, "method": "SERIALIZABLE"}` | 방식 선택 발급: `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `OPTIMISTIC`, `OPTIMISTIC_RETRY`, `REDIS_SET_ONLY`, `REDIS_MULTI_EXEC`, `REDIS_WATCH`, `REDIS_LUA`, `REDIS_ASYNC`·`REDIS_PUBSUB`(202 접수). 격리 수준 방식은 `duplicateCheck: false` 가능 |
 | GET | `/lab/coupons/{couponId}/result` | | 발급 결과, 수량, 검증 기준, 순서, 지연 |
 | DELETE | `/lab/data` | | 실험 데이터 초기화 |
 
@@ -90,6 +90,18 @@ AsyncIssueCouponService.issue(memberId, couponId)        ← 요청 스레드
 작업 스레드 (스레드 풀 couponIssueExecutor: 기본 4개, 큐 50000, JVM 메모리)
   [3] IssueConfirmService.confirm(), 실패 시 SREM          3단계와 같은 확정·보상
 결과 API: asyncResults(접수된 요청의 확정 결과), pending(접수됐지만 확정 결과가 아직 없는 요청)
+```
+
+## Pub/Sub 발급 플로우 (5단계, REDIS_PUBSUB)
+
+```
+발행자 프로세스 (local)        PubSubIssueCouponService.issue()      ← 요청 스레드
+  [1] RedisIssueCouponService.reserve(LUA)                          3단계와 같은 예약
+  [2] PUBLISH coupon:issue:requests "memberId:couponId" → HTTP 202 (PUBLISHED)
+        돌려받는 "받은 구독자 수" 는 완료가 아니다. 구독자가 없으면 0 이고 메시지는 사라진다
+구독자 프로세스 (pubsub-consumer)   PubSubIssueConsumer → 작업 스레드(couponIssueExecutor)
+  [3] IssueConfirmService.confirm(), 실패 시 SREM                  3단계와 같은 확정·보상
+결과 API: publishReceivers(받은 구독자 수별 요청 수), redisOnlyMembers(예약만 있고 확정되지 않은 회원)
 ```
 
 ## Redis 키

@@ -23,7 +23,7 @@ LAB_CHANGE_MYSQL_GLOBALS=true ./gradlew test --tests "*.IsolationLockSettingsExp
 ```
 
 > 통합 테스트(`@SpringBootTest`)는 MySQL과 Redis가 로컬에서 실행 중이어야 한다. 테스트는 `CouponToyProject_test` DB와 Redis db 1을 쓴다.
-> 단계별 실행 기록은 `build/lab/stage1-isolation.md`, `build/lab/stage1-lock-settings.md`, `build/lab/stage2-lock.md`, `build/lab/stage3-redis.md`, `build/lab/stage4-async.md` 에 남는다. 학습 단계 문서는 `docs/learning/`.
+> 단계별 실행 기록은 `build/lab/stage1-isolation.md`, `build/lab/stage1-lock-settings.md`, `build/lab/stage2-lock.md`, `build/lab/stage3-redis.md`, `build/lab/stage4-async.md`, `build/lab/stage5-pubsub.md` 에 남는다. 학습 단계 문서는 `docs/learning/`.
 
 ### Infrastructure (Docker)
 ```bash
@@ -46,7 +46,7 @@ docker build -t docker-coupon .
 
 - **Member** – 실험용 회원 엔티티 (인증 없음. email/password/role 컬럼은 기존 DB 스키마 호환용)
 - **Coupon** – 쿠폰 엔티티와 생성
-- **CouponIssue** – 쿠폰 발급. 학습 단계별 비교 구현 (`IsolationIssueCouponService`, `PessimisticIssueCouponService`, `OptimisticIssueCouponService`, `RedisIssueCouponService` + `IssueConfirmService`, `AsyncIssueCouponService`). 낙관적 락은 같은 `coupons` 테이블에 매핑한 `VersionedCoupon`(@Version)만 쓴다. `Coupon` 에는 @Version 을 넣지 않는다
+- **CouponIssue** – 쿠폰 발급. 학습 단계별 비교 구현 (`IsolationIssueCouponService`, `PessimisticIssueCouponService`, `OptimisticIssueCouponService`, `RedisIssueCouponService` + `IssueConfirmService`, `AsyncIssueCouponService`, `PubSubIssueCouponService` + `PubSubIssueConsumer`). 낙관적 락은 같은 `coupons` 테이블에 매핑한 `VersionedCoupon`(@Version)만 쓴다. `Coupon` 에는 @Version 을 넣지 않는다
 - **Lab** – `local` 프로필 전용 실험 API(`/lab/**`, 인증 없음). 데이터 준비, 방식 선택 발급, 결과 조회, 초기화. 단일 진입점 `LabService.issue()` 가 도착 순서와 결과를 기록
 
 ### API Endpoints
@@ -54,7 +54,7 @@ docker build -t docker-coupon .
 | Method | Path | 설명 |
 |---|---|---|
 | POST | `/lab/members`, `/lab/coupons` | 실험 데이터 준비 (local 전용) |
-| POST | `/lab/coupons/{couponId}/issue` | `{memberId, method, duplicateCheck?}` 로 방식 선택 발급 (local 전용). `REDIS_ASYNC` 는 202 |
+| POST | `/lab/coupons/{couponId}/issue` | `{memberId, method, duplicateCheck?}` 로 방식 선택 발급 (local 전용). `REDIS_ASYNC`, `REDIS_PUBSUB` 은 202 |
 | GET | `/lab/coupons/{couponId}/result` | 검증 기준·순서·지연·락 카운터 (local 전용) |
 | DELETE | `/lab/data` | 설정된 DB 3개 테이블 TRUNCATE + Redis `coupon:*` 삭제 (local 전용) |
 
@@ -88,6 +88,18 @@ AsyncIssueCouponService.issue(memberId, couponId)        ← 요청 스레드
 결과 API: asyncResults(접수된 요청의 확정 결과), pending(접수됐지만 확정 결과가 아직 없는 요청)
 ```
 
+### Pub/Sub 발급 플로우 (5단계, REDIS_PUBSUB)
+
+```
+발행자 프로세스 (local)        PubSubIssueCouponService.issue()      ← 요청 스레드
+  [1] RedisIssueCouponService.reserve(LUA)                          3단계와 같은 예약
+  [2] PUBLISH coupon:issue:requests "memberId:couponId" → HTTP 202 (PUBLISHED)
+        돌려받는 "받은 구독자 수" 는 완료가 아니다. 구독자가 없으면 0 이고 메시지는 사라진다
+구독자 프로세스 (pubsub-consumer)   PubSubIssueConsumer → 작업 스레드(couponIssueExecutor)
+  [3] IssueConfirmService.confirm(), 실패 시 SREM                  3단계와 같은 확정·보상
+결과 API: publishReceivers(받은 구독자 수별 요청 수), redisOnlyMembers(예약만 있고 확정되지 않은 회원)
+```
+
 ### Redis Key 구조
 | 키 패턴 | 자료형 | 용도 |
 |---|---|---|
@@ -99,6 +111,7 @@ AsyncIssueCouponService.issue(memberId, couponId)        ← 요청 스레드
 - **DB 조건부 UPDATE + UNIQUE**: Redis 통과 후 DB 수준에서 최종 수량·중복 검증. Redis 와 MySQL 은 한 트랜잭션이 아니다
 - **보상 SREM**: DB 확정 실패 시 예약을 되돌린다. 예약 뒤 프로세스가 죽으면 예약만 남는다(4~6단계 주제)
 - **비동기 확정 (4단계)**: 접수(202)는 발급 완료가 아니다. 확정 작업은 JVM 메모리 큐에 있으므로 프로세스가 죽으면 예약만 남는다. `@Async` 는 다른 빈에서 호출해야 프록시를 지나고, 작업 스레드(스레드 풀 안에서 확정을 실행하는 스레드)에는 요청 스레드의 트랜잭션이 없다
+- **Pub/Sub (5단계)**: 메시지를 저장하지 않는다. 구독자가 없거나 끊긴 동안 보낸 메시지, 받았지만 처리 전에 구독자가 죽은 메시지는 사라진다. 채널은 Redis DB 번호와 관계없이 서버 전체에서 하나다. 구독자 프로세스는 `SPRING_PROFILES_ACTIVE=pubsub-consumer` 로 띄운다
 - **실패 지점**: `global/failure/FailurePoints` — 테스트가 회원 단위로 멈춤·실패·종료 흉내를 건다. `LAB_HALT_AT=<지점>` 이면 그 지점에서 JVM 을 즉시 종료한다
 
 ### Global Infrastructure (`global` 패키지)

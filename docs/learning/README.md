@@ -8,7 +8,7 @@
 | 2 | [낙관적 락과 비관적 락](02-optimistic-pessimistic.md) | 구현·실행 완료 |
 | 3 | [Redis 예약: SET 명령만 / MULTI/EXEC / WATCH / Lua](03-redis-transaction-lua.md) | 구현·실행 완료 |
 | 4 | [Spring @Async](04-async.md) | 구현·실행 완료 |
-| 5 | Redis Pub/Sub | 계획 |
+| 5 | [Redis Pub/Sub](05-pubsub.md) | 구현·실행 완료 |
 | 6 | Redis Streams | 계획 |
 
 ## 공통 검증 기준
@@ -23,7 +23,7 @@
 | 유효 요청이 충분하면 수량만큼 발급 | `checks.fullyIssued` (유효 요청 < 수량이면 `null`) |
 | 접수·완료·실패·미완료 구분 | `requests` (진입점에서 본 결과), `issueRows` (DB에서 본 완료). 비동기 단계부터 둘이 달라진다 |
 
-결과 분류(`IssueOutcome`): `SUCCESS`(커밋 완료), `ACCEPTED`(접수만), 거절 `SOLD_OUT`·`SOLD_OUT_AT_DB`·`DUPLICATE`·`UNIQUE_VIOLATION`(HTTP 409), 트랜잭션 실패 `DEADLOCK`·`LOCK_WAIT_TIMEOUT`·`OPTIMISTIC_CONFLICT`·비동기 큐 포화 `REJECTED`(HTTP 503), `NOT_FOUND`, `ERROR`.
+결과 분류(`IssueOutcome`): `SUCCESS`(커밋 완료), `ACCEPTED`(접수만), 거절 `SOLD_OUT`·`SOLD_OUT_AT_DB`·`DUPLICATE`·`UNIQUE_VIOLATION`(HTTP 409), 트랜잭션 실패 `DEADLOCK`·`LOCK_WAIT_TIMEOUT`·`OPTIMISTIC_CONFLICT`·비동기 큐 포화 `REJECTED`(HTTP 503), Pub/Sub 발행 `PUBLISHED`(HTTP 202, 완료 아님), `NOT_FOUND`, `ERROR`.
 
 ### 순서는 세 가지를 따로 기록한다
 
@@ -75,6 +75,7 @@ API (`local` 프로필에서만 등록, 인증 없음)
 - 결과 API 의 `asyncResults`(접수된 요청의 확정 결과), `pending`(확정 결과가 아직 없는 요청), `confirmLatencyMs`(진입 → 커밋)로 접수와 완료를 나눠 센다.
 
 ### 5단계: Redis Pub/Sub
+- [05-pubsub.md](05-pubsub.md). 발행자(`local`)와 구독자(`pubsub-consumer`) 프로세스를 같은 코드의 실행 설정으로 나눴다. 3단계 예약·확정을 그대로 쓰고, 구독자의 확정은 4단계와 같은 스레드 풀에서 한다.
 - 같은 코드베이스를 실행 설정으로 발행자/소비자 프로세스로 나눈다.
 - 정상 전달, 구독자 없음, 구독자 중단·재시작, 수신 후 DB 실패, 구독자 2개가 같은 메시지를 각각 받는 경우.
 - PUBLISH 성공이나 구독자 수를 완료로 보지 않는다. 별도 영속 큐나 복구 장치를 만들지 않고, 감지·보상 가능한 실패와 근거 없이 사라지는 유실을 나눠 적는다.
@@ -109,7 +110,10 @@ API (`local` 프로필에서만 등록, 인증 없음)
 | `IssueRequestLog`, `LabService.result` | 비동기 확정 결과·미완료·진입 → 커밋 시간. 요청 기록을 DB 보다 먼저 읽고 DB 는 읽기 트랜잭션 하나에서 읽는다 |
 | `GlobalControllerAdvice`, `ErrorCode`, `IssueOutcome` | 비동기 큐 포화(`TaskRejectedException`) 503, `REJECTED` |
 | `AsyncIssueTest`, `TransactionalEventListenerTest` | 4단계 접수와 확정 사이, 확정 실패, 큐 포화와 거부 정책, 동시 요청 / 트랜잭션 이벤트 리스너 동작 확인 |
-| `performance/k6/coupon-issue.js` | `REDIS_ASYNC` 는 워밍업 확정이 끝난 뒤 측정하고, 확정이 모두 끝날 때까지 결과를 다시 조회 |
+| `performance/k6/coupon-issue.js` | `REDIS_ASYNC` 는 워밍업 확정이 끝난 뒤 측정하고, 확정이 모두 끝날 때까지 결과를 다시 조회. `REDIS_PUBSUB` 은 Redis 에만 있는 회원이 0 이 되거나 2초 동안 줄지 않을 때까지 |
+| `PubSubIssueCouponService`, `PubSubIssueConsumer`, `PubSubConsumerConfig` | 5단계 발행자·구독자 (신규). 구독은 `pubsub-consumer` 프로필에서만 |
+| `RedisIssueCouponService.confirmOrCancel` | 4·5단계가 같은 확정·보상을 쓰도록 공개 |
+| `PubSubIssueTest` | 5단계 구독자 없음·재구독, 정상 전달, 받은 뒤 DB 실패, 받은 뒤 처리 전 종료, 구독자 2개, 구독자 2개 중 한쪽 실패, 동시 요청 |
 | `docker-compose.yml` | app 의 `JWT_SECRET_KEY` 제거 (나머지 미커밋 변경 그대로) |
 | 테스트 공통 지원 | 회원을 회원가입(BCrypt) 대신 리포지토리로 저장, `local` 프로필, Redis db 1. 순서 고정·동시 요청 장치는 `ConcurrencyExperimentSupport` (1·2단계 공용) |
 | `OptimisticPessimisticLockTest` | 2단계 순서 고정, 버전 검사 우회, CATS 락 부여 순서, 동시 요청 비교 |
