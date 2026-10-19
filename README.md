@@ -51,11 +51,11 @@ SPRING_DATA_REDIS_DATABASE=2 ./gradlew bootRun
 |---|---|---|---|
 | POST | `/lab/members` | `{"count": 1000}` | 실험용 회원 일괄 생성 |
 | POST | `/lab/coupons` | `{"name": "s1", "totalCount": 100}` | 실험용 쿠폰 생성 |
-| POST | `/lab/coupons/{couponId}/issue` | `{"memberId": 1, "method": "SERIALIZABLE"}` | 방식 선택 발급: `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `OPTIMISTIC`, `OPTIMISTIC_RETRY`, `REDIS_SET_ONLY`, `REDIS_MULTI_EXEC`, `REDIS_WATCH`, `REDIS_LUA`, `REDIS_EVENT`(202 접수). 격리 수준 방식은 `duplicateCheck: false` 가능 |
+| POST | `/lab/coupons/{couponId}/issue` | `{"memberId": 1, "method": "SERIALIZABLE"}` | 방식 선택 발급: `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `OPTIMISTIC`, `OPTIMISTIC_RETRY`, `REDIS_SET_ONLY`, `REDIS_MULTI_EXEC`, `REDIS_WATCH`, `REDIS_LUA`, `REDIS_ASYNC`(202 접수). 격리 수준 방식은 `duplicateCheck: false` 가능 |
 | GET | `/lab/coupons/{couponId}/result` | | 발급 결과, 수량, 검증 기준, 순서, 지연 |
 | DELETE | `/lab/data` | | 실험 데이터 초기화 |
 
-모든 응답은 아래 형태로 반환된다. 품절·중복은 409, 데드락·락 대기 초과는 503, 잘못된 입력은 400.
+모든 응답은 아래 형태로 반환된다. 품절·중복은 409, 데드락·락 대기 초과·비동기 큐 포화는 503, 잘못된 입력은 400.
 
 ```json
 { "success": true,  "response": { }, "error": null }
@@ -78,6 +78,18 @@ RedisIssueCouponService.issue(memberId, couponId, method)   ← DB 트랜잭션 
         UPDATE coupons SET issued_count = issued_count + 1
          WHERE coupon_id = ? AND issued_count < total_count   0건이면 SOLD_OUT_AT_DB
   [3] [2] 실패 시 SREM 으로 예약을 되돌린다. UNIQUE 위반(이미 발급된 회원)은 되돌리지 않는다
+```
+
+## 비동기 발급 플로우 (4단계, REDIS_ASYNC)
+
+```
+AsyncIssueCouponService.issue(memberId, couponId)        ← 요청 스레드
+  [1] RedisIssueCouponService.reserve(LUA)                3단계와 같은 예약
+  [2] RedisIssueCouponService.confirmLater()  @Async     couponIssueExecutor 큐에 넣고 바로 반환 → HTTP 202 (접수)
+        큐가 가득 차면 TaskRejectedException → SREM, HTTP 503
+couponIssueExecutor 스레드 (기본 4개, 큐 50000, JVM 메모리)
+  [3] IssueConfirmService.confirm(), 실패 시 SREM          3단계와 같은 확정·보상
+결과 API: asyncResults(접수된 요청의 확정 결과), pending(접수됐지만 확정 결과가 아직 없는 요청)
 ```
 
 ## Redis 키

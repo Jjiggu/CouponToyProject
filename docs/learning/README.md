@@ -7,7 +7,7 @@
 | 1 | [명시적 락 없이 격리 수준 비교](01-isolation-level.md) | 구현·실행 완료 (변형 실험 포함) |
 | 2 | [낙관적 락과 비관적 락](02-optimistic-pessimistic.md) | 구현·실행 완료 |
 | 3 | [Redis 예약: SET 명령만 / MULTI/EXEC / WATCH / Lua](03-redis-transaction-lua.md) | 구현·실행 완료 |
-| 4 | Spring @Async | 계획 |
+| 4 | [Spring @Async](04-async.md) | 구현·실행 완료 |
 | 5 | Redis Pub/Sub | 계획 |
 | 6 | Redis Streams | 계획 |
 
@@ -23,7 +23,7 @@
 | 유효 요청이 충분하면 수량만큼 발급 | `checks.fullyIssued` (유효 요청 < 수량이면 `null`) |
 | 접수·완료·실패·미완료 구분 | `requests` (진입점에서 본 결과), `issueRows` (DB에서 본 완료). 비동기 단계부터 둘이 달라진다 |
 
-결과 분류(`IssueOutcome`): `SUCCESS`(커밋 완료), `ACCEPTED`(접수만), 거절 `SOLD_OUT`·`DUPLICATE`·`UNIQUE_VIOLATION`(HTTP 409), 트랜잭션 실패 `DEADLOCK`·`LOCK_WAIT_TIMEOUT`·`OPTIMISTIC_CONFLICT`(HTTP 503), `NOT_FOUND`, `ERROR`.
+결과 분류(`IssueOutcome`): `SUCCESS`(커밋 완료), `ACCEPTED`(접수만), 거절 `SOLD_OUT`·`SOLD_OUT_AT_DB`·`DUPLICATE`·`UNIQUE_VIOLATION`(HTTP 409), 트랜잭션 실패 `DEADLOCK`·`LOCK_WAIT_TIMEOUT`·`OPTIMISTIC_CONFLICT`·비동기 큐 포화 `REJECTED`(HTTP 503), `NOT_FOUND`, `ERROR`.
 
 ### 순서는 세 가지를 따로 기록한다
 
@@ -71,8 +71,8 @@ API (`local` 프로필에서만 등록, 인증 없음)
 3단계에서 검증한 예약 로직과 같은 DB 확정 로직을 그대로 쓰고, 작업을 전달·실행·복구하는 방식만 바꾼다. 공통 로직을 바꾸면 이유와 비교 조건 변화를 기록한다. 모든 조합을 만들지 않는다.
 
 ### 4단계: Spring @Async
-- 현재 구현: 트랜잭션 없이 이벤트 발행 → `@TransactionalEventListener(fallbackExecution = true)` 가 트랜잭션이 없어 바로 실행 → `@Async("couponIssueEventExecutor")` (core 4, max 8, queue 50000, 거부 정책 기본값 Abort) → `TransactionTemplate(REQUIRES_NEW)` 로 DB 확정. 작업 실패 시 로그만 남고 Redis 예약은 되돌리지 않는다(미커밋 변경에서 SREM 제거).
-- HTTP 202 접수와 DB 완료를 구분해 센다. 큐 포화, 작업 예외, DB 실패, 프로세스 강제 종료 때 작업이 실행되거나 사라지는 위치를 확인한다.
+- [04-async.md](04-async.md). 기존 이벤트 방식(`@TransactionalEventListener` + `@Async`)을 확인한 뒤 `@Async` 메서드 하나로 다시 썼다. 3단계 Lua 예약과 `IssueConfirmService` 는 그대로, DB 확정만 스레드 풀(`couponIssueExecutor`)로 넘긴다.
+- 결과 API 의 `asyncResults`(접수된 요청의 확정 결과), `pending`(확정 결과가 아직 없는 요청), `confirmLatencyMs`(진입 → 커밋)로 접수와 완료를 나눠 센다.
 
 ### 5단계: Redis Pub/Sub
 - 같은 코드베이스를 실행 설정으로 발행자/소비자 프로세스로 나눈다.
@@ -104,6 +104,12 @@ API (`local` 프로필에서만 등록, 인증 없음)
 | `CouponIssuedRedisRepository` | 예약 방식 4가지(SET 명령만, MULTI/EXEC, WATCH, Lua), 회원 목록 조회 |
 | `FailurePoints` | 장애 실험용 실패 지점 (신규). 평소에는 아무 일도 하지 않음 |
 | `RedisReservationTest` | 3단계 끼어들기, SREM 전 틈, 예약 후 실패·종료, 보상 경합, 동시 요청 비교 |
+| `EventIssueCouponService` → `AsyncIssueCouponService`, `AsyncConfig` | 4단계에서 다시 작성. 이벤트·리스너 대신 `@Async` 메서드 하나(`RedisIssueCouponService.confirmLater`), 스레드 수·큐 용량 설정 (4단계 문서 2절) |
+| `RedisIssueCouponService` | 예약(`reserve`)과 확정·보상(`confirmOrCancel`)을 나눠 4단계가 같은 코드를 쓰게 함. 3단계 동작은 같다 |
+| `IssueRequestLog`, `LabService.result` | 비동기 확정 결과·미완료·진입 → 커밋 시간. 요청 기록을 DB 보다 먼저 읽고 DB 는 읽기 트랜잭션 하나에서 읽는다 |
+| `GlobalControllerAdvice`, `ErrorCode`, `IssueOutcome` | 비동기 큐 포화(`TaskRejectedException`) 503, `REJECTED` |
+| `AsyncIssueTest`, `TransactionalEventListenerTest` | 4단계 접수와 확정 사이, 확정 실패, 큐 포화와 거부 정책, 동시 요청 / 트랜잭션 이벤트 리스너 동작 확인 |
+| `performance/k6/coupon-issue.js` | `REDIS_ASYNC` 는 워밍업 확정이 끝난 뒤 측정하고, 확정이 모두 끝날 때까지 결과를 다시 조회 |
 | `docker-compose.yml` | app 의 `JWT_SECRET_KEY` 제거 (나머지 미커밋 변경 그대로) |
 | 테스트 공통 지원 | 회원을 회원가입(BCrypt) 대신 리포지토리로 저장, `local` 프로필, Redis db 1. 순서 고정·동시 요청 장치는 `ConcurrencyExperimentSupport` (1·2단계 공용) |
 | `OptimisticPessimisticLockTest` | 2단계 순서 고정, 버전 검사 우회, CATS 락 부여 순서, 동시 요청 비교 |
@@ -115,9 +121,7 @@ API (`local` 프로필에서만 등록, 인증 없음)
 | 대상 | 이유 |
 |---|---|
 | `PessimisticIssueCouponService`, `findByCouponIdForUpdate` | 2단계 비관적 락 비교 대상 (변경 없음) |
-| `CouponIssuedRedisRepository.checkAndRegister`, `increaseIssuedCount` | 4단계 기준선(`EventIssueCouponService`)이 그대로 쓴다 |
-| `EventIssueCouponService`, `CouponIssueEventListener`, `AsyncConfig` | 4단계 기준선 (미커밋 변경 그대로) |
-| `CouponIssueMetrics`, `monitoring/` | Grafana 대시보드가 사용 |
+| `monitoring/` | Grafana 대시보드 (앱 지표 패널 4개는 4단계에서 삭제) |
 | `Member` 의 email/password/role 컬럼 | 기존 DB 볼륨의 NOT NULL 컬럼과 맞추기 위해 |
 | `performance/sql/consistency-check.sql` | 결과 API 를 원시 SQL 로 교차 확인 |
 | `performance/scripts/aggregate-k6-results.js` | 이전 결과 문서 생성기. 실행하면 `latest-summary.md` 를 덮어써서 이번에는 실행하지 않음 |
@@ -140,3 +144,13 @@ API (`local` 프로필에서만 등록, 인증 없음)
 | 대상 | 이유 |
 |---|---|
 | `@Retry`, `OptimisticLockRetryAspect` | 호출처 없음. 최대 1000회 × 100ms 고정 지연. 2단계 `OptimisticIssueCouponService.issueWithRetry` 가 대체 |
+
+### 삭제 (2026-10-19)
+
+| 대상 | 이유 |
+|---|---|
+| `CouponIssuedEvent`, `CouponIssueEventListener` | 요청 경로에 DB 트랜잭션이 없어 `@TransactionalEventListener` 가 지킬 "커밋 뒤" 가 없다. `@Async` 메서드 하나로 대체 (4단계 문서 2절) |
+| `CouponIssueMetrics`, `CouponIssueResult`, `CouponIssueStrategy` 의 지표 태그 | 이벤트 방식에서만 기록. 결과 API 가 대체 |
+| `CouponIssuedRedisRepository.checkAndRegister` | 이벤트 방식만 쓰던 MULTI/EXEC 예약. 4~6단계는 Lua 예약 |
+| Grafana 패널 4개(`coupon_issue_*`) | 위 지표 삭제로 데이터가 없다 |
+| 작업 전부터 있던 미커밋 변경 3개 파일(`EventIssueCouponService`, `CouponIssueEventListener`, `EventIssueCouponServiceTest`) | 재작성 전에 `git stash` 로 보관(`stash@{0}`). `git stash show -p --include-untracked stash@{0}` 로 볼 수 있다 |

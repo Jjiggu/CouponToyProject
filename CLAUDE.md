@@ -23,7 +23,7 @@ LAB_CHANGE_MYSQL_GLOBALS=true ./gradlew test --tests "*.IsolationLockSettingsExp
 ```
 
 > 통합 테스트(`@SpringBootTest`)는 MySQL과 Redis가 로컬에서 실행 중이어야 한다. 테스트는 `CouponToyProject_test` DB와 Redis db 1을 쓴다.
-> 단계별 실행 기록은 `build/lab/stage1-isolation.md`, `build/lab/stage1-lock-settings.md`, `build/lab/stage2-lock.md`, `build/lab/stage3-redis.md` 에 남는다. 학습 단계 문서는 `docs/learning/`.
+> 단계별 실행 기록은 `build/lab/stage1-isolation.md`, `build/lab/stage1-lock-settings.md`, `build/lab/stage2-lock.md`, `build/lab/stage3-redis.md`, `build/lab/stage4-async.md` 에 남는다. 학습 단계 문서는 `docs/learning/`.
 
 ### Infrastructure (Docker)
 ```bash
@@ -46,7 +46,7 @@ docker build -t docker-coupon .
 
 - **Member** – 실험용 회원 엔티티 (인증 없음. email/password/role 컬럼은 기존 DB 스키마 호환용)
 - **Coupon** – 쿠폰 엔티티와 생성
-- **CouponIssue** – 쿠폰 발급. 학습 단계별 비교 구현 (`IsolationIssueCouponService`, `PessimisticIssueCouponService`, `OptimisticIssueCouponService`, `RedisIssueCouponService` + `IssueConfirmService`, `EventIssueCouponService`). 낙관적 락은 같은 `coupons` 테이블에 매핑한 `VersionedCoupon`(@Version)만 쓴다. `Coupon` 에는 @Version 을 넣지 않는다
+- **CouponIssue** – 쿠폰 발급. 학습 단계별 비교 구현 (`IsolationIssueCouponService`, `PessimisticIssueCouponService`, `OptimisticIssueCouponService`, `RedisIssueCouponService` + `IssueConfirmService`, `AsyncIssueCouponService`). 낙관적 락은 같은 `coupons` 테이블에 매핑한 `VersionedCoupon`(@Version)만 쓴다. `Coupon` 에는 @Version 을 넣지 않는다
 - **Lab** – `local` 프로필 전용 실험 API(`/lab/**`, 인증 없음). 데이터 준비, 방식 선택 발급, 결과 조회, 초기화. 단일 진입점 `LabService.issue()` 가 도착 순서와 결과를 기록
 
 ### API Endpoints
@@ -54,7 +54,7 @@ docker build -t docker-coupon .
 | Method | Path | 설명 |
 |---|---|---|
 | POST | `/lab/members`, `/lab/coupons` | 실험 데이터 준비 (local 전용) |
-| POST | `/lab/coupons/{couponId}/issue` | `{memberId, method, duplicateCheck?}` 로 방식 선택 발급 (local 전용). `REDIS_EVENT` 는 202 |
+| POST | `/lab/coupons/{couponId}/issue` | `{memberId, method, duplicateCheck?}` 로 방식 선택 발급 (local 전용). `REDIS_ASYNC` 는 202 |
 | GET | `/lab/coupons/{couponId}/result` | 검증 기준·순서·지연·락 카운터 (local 전용) |
 | DELETE | `/lab/data` | 설정된 DB 3개 테이블 TRUNCATE + Redis `coupon:*` 삭제 (local 전용) |
 
@@ -76,6 +76,18 @@ RedisIssueCouponService.issue(memberId, couponId, method)   ← DB 트랜잭션 
   [3] [2] 실패 시 SREM 으로 예약을 되돌린다. UNIQUE 위반(이미 발급된 회원)은 되돌리지 않는다
 ```
 
+### 비동기 발급 플로우 (4단계, REDIS_ASYNC)
+
+```
+AsyncIssueCouponService.issue(memberId, couponId)        ← 요청 스레드
+  [1] RedisIssueCouponService.reserve(LUA)                3단계와 같은 예약
+  [2] RedisIssueCouponService.confirmLater()  @Async     couponIssueExecutor 큐에 넣고 바로 반환 → HTTP 202 (접수)
+        큐가 가득 차면 TaskRejectedException → SREM, HTTP 503
+couponIssueExecutor 스레드 (기본 4개, 큐 50000, JVM 메모리)
+  [3] IssueConfirmService.confirm(), 실패 시 SREM          3단계와 같은 확정·보상
+결과 API: asyncResults(접수된 요청의 확정 결과), pending(접수됐지만 확정 결과가 아직 없는 요청)
+```
+
 ### Redis Key 구조
 | 키 패턴 | 자료형 | 용도 |
 |---|---|---|
@@ -86,6 +98,7 @@ RedisIssueCouponService.issue(memberId, couponId, method)   ← DB 트랜잭션 
 - **Redis 예약**: 명령 하나는 원자적이지만 명령 사이에는 다른 요청이 끼어든다. 판단과 예약을 한 번에 하려면 Lua(또는 WATCH)를 쓴다. MULTI/EXEC 는 묶어 실행할 뿐 결과로 분기하지 못해 SREM 으로 되돌린다
 - **DB 조건부 UPDATE + UNIQUE**: Redis 통과 후 DB 수준에서 최종 수량·중복 검증. Redis 와 MySQL 은 한 트랜잭션이 아니다
 - **보상 SREM**: DB 확정 실패 시 예약을 되돌린다. 예약 뒤 프로세스가 죽으면 예약만 남는다(4~6단계 주제)
+- **비동기 확정 (4단계)**: 접수(202)는 발급 완료가 아니다. 확정 작업은 JVM 메모리 큐에 있으므로 프로세스가 죽으면 예약만 남는다. `@Async` 는 다른 빈에서 호출해야 프록시를 지나고, 풀 스레드에는 요청 스레드의 트랜잭션이 없다
 - **실패 지점**: `global/failure/FailurePoints` — 테스트가 회원 단위로 멈춤·실패·종료 흉내를 건다. `LAB_HALT_AT=<지점>` 이면 그 지점에서 JVM 을 즉시 종료한다
 
 ### Global Infrastructure (`global` 패키지)
@@ -95,7 +108,7 @@ RedisIssueCouponService.issue(memberId, couponId, method)   ← DB 트랜잭션 
   - 400: 입력 검증·파싱 오류
   - 404: `CouponNotFoundException`, `MemberNotFoundException`, 없는 경로
   - 409: `CouponSoldOutException`, `IsAlreadyIssued`, `DataIntegrityViolationException`(UNIQUE 위반)
-  - 503: `PessimisticLockingFailureException`(데드락, 락 대기 시간 초과), `OptimisticLockingFailureException`(버전 충돌)
+  - 503: `PessimisticLockingFailureException`(데드락, 락 대기 시간 초과), `OptimisticLockingFailureException`(버전 충돌), `TaskRejectedException`(비동기 큐 포화)
 
 ### Tech Stack
 - Java 17, Spring Boot 3.4.1, Spring Data JPA, Spring Data Redis, Lombok
