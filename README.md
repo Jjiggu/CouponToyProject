@@ -51,7 +51,7 @@ SPRING_DATA_REDIS_DATABASE=2 ./gradlew bootRun
 |---|---|---|---|
 | POST | `/lab/members` | `{"count": 1000}` | 실험용 회원 일괄 생성 |
 | POST | `/lab/coupons` | `{"name": "s1", "totalCount": 100}` | 실험용 쿠폰 생성 |
-| POST | `/lab/coupons/{couponId}/issue` | `{"memberId": 1, "method": "SERIALIZABLE"}` | 방식 선택 발급: `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `OPTIMISTIC`, `OPTIMISTIC_RETRY`, `REDIS_SET_ONLY`, `REDIS_MULTI_EXEC`, `REDIS_WATCH`, `REDIS_LUA`, `REDIS_ASYNC`·`REDIS_PUBSUB`(202 접수). 격리 수준 방식은 `duplicateCheck: false` 가능 |
+| POST | `/lab/coupons/{couponId}/issue` | `{"memberId": 1, "method": "SERIALIZABLE"}` | 방식 선택 발급: `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `OPTIMISTIC`, `OPTIMISTIC_RETRY`, `REDIS_SET_ONLY`, `REDIS_MULTI_EXEC`, `REDIS_WATCH`, `REDIS_LUA`, `REDIS_ASYNC`·`REDIS_PUBSUB`·`REDIS_STREAM`·`REDIS_STREAM_ATOMIC`(202 접수). 격리 수준 방식은 `duplicateCheck: false` 가능 |
 | GET | `/lab/coupons/{couponId}/result` | | 발급 결과, 수량, 검증 기준, 순서, 지연 |
 | DELETE | `/lab/data` | | 실험 데이터 초기화 |
 
@@ -102,6 +102,20 @@ AsyncIssueCouponService.issue(memberId, couponId)        ← 요청 스레드
 구독자 프로세스 (pubsub-consumer)   PubSubIssueConsumer → 작업 스레드(couponIssueExecutor)
   [3] IssueConfirmService.confirm(), 실패 시 SREM                  3단계와 같은 확정·보상
 결과 API: publishReceivers(받은 구독자 수별 요청 수), redisOnlyMembers(예약만 있고 확정되지 않은 회원)
+```
+
+## Stream 발급 플로우 (6단계, REDIS_STREAM)
+
+```
+발행자 프로세스 (local)            StreamIssueCouponService               ← 요청 스레드
+  REDIS_STREAM         Lua 예약 → XADD coupon:issue:stream (두 명령 사이에서 죽으면 예약만 남음)
+  REDIS_STREAM_ATOMIC  EVALSHA 한 번: 예약 판단 → XADD → SADD
+  → HTTP 202 (QUEUED)
+소비자 프로세스 (stream-consumer)    그룹 coupon-issuers, 소비자 4개(consumer-{pid}-n)
+  XREADGROUP → IssueConfirmService.confirm() → 커밋 뒤 XACK
+    UNIQUE 위반(이미 발급, 재처리 포함) → XACK / 품절·없는 회원 → SREM, XACK / 그 밖의 실패 → ACK 안 함(pending 에 남음)
+  1초마다 XAUTOCLAIM(최소 유휴 5초)으로 회수해 다시 처리. 전달 3회를 넘으면 coupon:issue:stream:dead 에 남기고 SREM, XACK
+결과 API: redisOnlyMembers(예약만 있고 확정 안 된 회원), stream(스트림 전체의 길이·대기·pending·따로 보관 수)
 ```
 
 ## Redis 키

@@ -9,7 +9,7 @@
 | 3 | [Redis 예약: SET 명령만 / MULTI/EXEC / WATCH / Lua](03-redis-transaction-lua.md) | 구현·실행 완료 |
 | 4 | [Spring @Async](04-async.md) | 구현·실행 완료 |
 | 5 | [Redis Pub/Sub](05-pubsub.md) | 구현·실행 완료 |
-| 6 | Redis Streams | 계획 |
+| 6 | [Redis Streams](06-streams.md) | 구현·실행 완료 |
 
 ## 공통 검증 기준
 
@@ -23,7 +23,7 @@
 | 유효 요청이 충분하면 수량만큼 발급 | `checks.fullyIssued` (유효 요청 < 수량이면 `null`) |
 | 접수·완료·실패·미완료 구분 | `requests` (진입점에서 본 결과), `issueRows` (DB에서 본 완료). 비동기 단계부터 둘이 달라진다 |
 
-결과 분류(`IssueOutcome`): `SUCCESS`(커밋 완료), `ACCEPTED`(접수만), 거절 `SOLD_OUT`·`SOLD_OUT_AT_DB`·`DUPLICATE`·`UNIQUE_VIOLATION`(HTTP 409), 트랜잭션 실패 `DEADLOCK`·`LOCK_WAIT_TIMEOUT`·`OPTIMISTIC_CONFLICT`·비동기 큐 포화 `REJECTED`(HTTP 503), Pub/Sub 발행 `PUBLISHED`(HTTP 202, 완료 아님), `NOT_FOUND`, `ERROR`.
+결과 분류(`IssueOutcome`): `SUCCESS`(커밋 완료), `ACCEPTED`(접수만), 거절 `SOLD_OUT`·`SOLD_OUT_AT_DB`·`DUPLICATE`·`UNIQUE_VIOLATION`(HTTP 409), 트랜잭션 실패 `DEADLOCK`·`LOCK_WAIT_TIMEOUT`·`OPTIMISTIC_CONFLICT`·비동기 큐 포화 `REJECTED`(HTTP 503), Pub/Sub 발행 `PUBLISHED`·Stream 등록 `QUEUED`(HTTP 202, 완료 아님), `NOT_FOUND`, `ERROR`.
 
 ### 순서는 세 가지를 따로 기록한다
 
@@ -81,6 +81,7 @@ API (`local` 프로필에서만 등록, 인증 없음)
 - PUBLISH 성공이나 구독자 수를 완료로 보지 않는다. 별도 영속 큐나 복구 장치를 만들지 않고, 감지·보상 가능한 실패와 근거 없이 사라지는 유실을 나눠 적는다.
 
 ### 6단계: Redis Streams
+- [06-streams.md](06-streams.md). 발행자(`local`)와 소비자(`stream-consumer`) 프로세스. 같은 그룹에 소비자를 늘려 동시 처리하고, DB 커밋 뒤에 ACK. 보상(SREM)은 다시 해도 같은 거절과 전달 횟수 상한 초과 때만(이유는 문서 2절).
 - Consumer Group, 대기 메시지 vs pending, DB 커밋 후 ACK, XAUTOCLAIM 회수, 재시도 상한과 반복 실패 보관.
 - DB 커밋 후 ACK 전 종료, Redis 예약 후 XADD 전 종료를 재현한다. 예약과 메시지 등록을 함께 처리하는 최소 개선을 검토한다.
 - 재처리 멱등성(UNIQUE 예외만 잡으면 `issued_count` 까지 맞는지)과 메시지 유실 방지를 구분한다.
@@ -113,6 +114,9 @@ API (`local` 프로필에서만 등록, 인증 없음)
 | `performance/k6/coupon-issue.js` | `REDIS_ASYNC` 는 워밍업 확정이 끝난 뒤 측정하고, 확정이 모두 끝날 때까지 결과를 다시 조회. `REDIS_PUBSUB` 은 Redis 에만 있는 회원이 0 이 되거나 2초 동안 줄지 않을 때까지 |
 | `PubSubIssueCouponService`, `PubSubIssueConsumer`, `PubSubConsumerConfig` | 5단계 발행자·구독자 (신규). 구독은 `pubsub-consumer` 프로필에서만 |
 | `RedisIssueCouponService.confirmOrCancel` | 4·5단계가 같은 확정·보상을 쓰도록 공개 |
+| `StreamIssueCouponService`, `StreamIssueConsumer`, `StreamConsumerConfig` | 6단계 발행자·소비자 (신규). 읽기는 `stream-consumer` 프로필에서만, 회수는 1초마다 XAUTOCLAIM |
+| `CouponIssuedRedisRepository.reserveAndEnqueueWithLua`, `RedisIssueCouponService.reserveAndEnqueue` | 6단계 최소 개선: Lua 예약과 XADD 를 한 스크립트로 |
+| `StreamIssueTest` | 6단계 대기와 pending, 커밋 뒤 ACK 전 종료와 재처리, 일시적 실패 재시도, 전달 횟수 상한, 소비자 2개, 예약 뒤 XADD 전 종료, XADD 실패, 스트림 자르기, 동시 요청 |
 | `PubSubIssueTest` | 5단계 구독자 없음·재구독, 정상 전달, 받은 뒤 DB 실패, 받은 뒤 처리 전 종료, 구독자 2개, 구독자 2개 중 한쪽 실패, 동시 요청 |
 | `docker-compose.yml` | app 의 `JWT_SECRET_KEY` 제거 (나머지 미커밋 변경 그대로) |
 | 테스트 공통 지원 | 회원을 회원가입(BCrypt) 대신 리포지토리로 저장, `local` 프로필, Redis db 1. 순서 고정·동시 요청 장치는 `ConcurrencyExperimentSupport` (1·2단계 공용) |
