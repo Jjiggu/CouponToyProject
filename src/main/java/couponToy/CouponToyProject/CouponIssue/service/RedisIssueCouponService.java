@@ -69,7 +69,8 @@ public class RedisIssueCouponService {
         return CompletableFuture.completedFuture(confirmOrCancel(memberId, couponId));
     }
 
-    private IssueCouponResponse confirmOrCancel(Long memberId, Long couponId) {
+    // DB 확정과 실패 시 보상. 3단계(동기), 4단계(작업 스레드), 5단계(구독자)가 같은 코드를 쓴다.
+    public IssueCouponResponse confirmOrCancel(Long memberId, Long couponId) {
         try {
             return issueConfirmService.confirm(memberId, couponId);
         } catch (DataIntegrityViolationException e) {

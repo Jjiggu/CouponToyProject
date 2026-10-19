@@ -21,7 +21,7 @@ SPRING_DATA_REDIS_DATABASE=2 SPRING_JPA_SHOW_SQL=false SPRING_JPA_PROPERTIES_HIB
 | 변수 | 기본값 | 설명 |
 |---|---|---|
 | `BASE_URL` | `http://localhost:8080` | |
-| `METHOD` | `SERIALIZABLE` | `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `OPTIMISTIC`, `OPTIMISTIC_RETRY`, `REDIS_SET_ONLY`, `REDIS_MULTI_EXEC`, `REDIS_WATCH`, `REDIS_LUA`, `REDIS_ASYNC` |
+| `METHOD` | `SERIALIZABLE` | `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `OPTIMISTIC`, `OPTIMISTIC_RETRY`, `REDIS_SET_ONLY`, `REDIS_MULTI_EXEC`, `REDIS_WATCH`, `REDIS_LUA`, `REDIS_ASYNC`, `REDIS_PUBSUB` |
 | `SCENARIO` | `smoke` | `burst`, `duplicate`, `smoke`, `soldout`, `step`, `spike`, `soak` |
 | `TOTAL_COUNT` | `100` | 쿠폰 수량 |
 | `MEMBERS` | `1000` | setup 에서 만들 회원 수 |
@@ -41,6 +41,7 @@ k6 run --summary-export performance/results/stage1-burst-serializable.json perfo
 - `REDIS_WATCH` 의 재시도 상한은 `COUPON_ISSUE_REDIS_WATCH_MAX_ATTEMPTS`(기본 10). 커넥션 풀이 없으면 `REDIS_MULTI_EXEC`·`REDIS_WATCH` 는 요청(시도)마다 새 Redis 연결을 맺는다. 이어서 실행할 때는 호스트의 TIME_WAIT 가 빠질 때까지 기다린다(`netstat -an -p tcp | grep -c TIME_WAIT`, 3단계 문서 4-8)
 - `coupon_issue_http_duration` 은 발급 요청만의 응답 시간이다. `http_req_duration` 에는 setup/teardown 요청이 섞인다.
 - `REDIS_ASYNC` 는 teardown 에서 결과 API 의 `pending`(접수됐지만 확정 결과가 없는 요청)이 0 이 될 때까지 50ms 간격으로 다시 조회한다(최대 120초). 발급 완료 처리량은 그 시점까지로 계산한다
+- `REDIS_PUBSUB` 은 구독자 프로세스를 따로 띄워야 확정된다(같은 실행 방법에 `SPRING_PROFILES_ACTIVE=pubsub-consumer SERVER_PORT=18081`). teardown 은 결과 API 의 `redisOnlyMembers` 가 0 이 되거나 2초 동안 줄지 않을 때까지 기다린다. 줄지 않고 멈추면 유실로 본다
 - `REDIS_ASYNC` 의 스레드 풀은 bootRun 앞에 `COUPON_ISSUE_ASYNC_POOL_SIZE`(기본 4), `COUPON_ISSUE_ASYNC_QUEUE_CAPACITY`(50000) 를 붙여 바꾼다
 
 ## 3. 정합성 교차 확인

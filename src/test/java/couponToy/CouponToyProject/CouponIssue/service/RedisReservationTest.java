@@ -425,11 +425,4 @@ class RedisReservationTest extends ConcurrencyExperimentSupport {
             throw new SimulatedCrash();
         };
     }
-
-    /** 프로세스 강제 종료 흉내: RuntimeException 이 아니라서 보상(catch RuntimeException)이 실행되지 않는다. */
-    static final class SimulatedCrash extends Error {
-        SimulatedCrash() {
-            super("프로세스 강제 종료 흉내", null, false, false);
-        }
-    }
 }

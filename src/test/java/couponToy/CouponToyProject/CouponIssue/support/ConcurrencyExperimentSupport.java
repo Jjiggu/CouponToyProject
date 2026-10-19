@@ -271,4 +271,11 @@ public abstract class ConcurrencyExperimentSupport extends AbstractCouponIssueIn
             released.countDown();
         }
     }
+
+    /** 프로세스 강제 종료 흉내: RuntimeException 이 아니라서 보상(catch RuntimeException)이 실행되지 않는다. */
+    public static final class SimulatedCrash extends Error {
+        public SimulatedCrash() {
+            super("프로세스 강제 종료 흉내", null, false, false);
+        }
+    }
 }

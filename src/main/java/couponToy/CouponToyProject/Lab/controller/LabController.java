@@ -27,6 +27,8 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class LabController {
 
+    private static final Set<CouponIssueStrategy> ASYNC_METHODS = EnumSet.of(CouponIssueStrategy.REDIS_ASYNC, CouponIssueStrategy.REDIS_PUBSUB);
+
     private final LabService labService;
 
     public record CreateMembersRequest(@NotNull @Positive @Max(200_000) Integer count) {
@@ -61,7 +63,7 @@ public class LabController {
     @PostMapping("/coupons/{couponId}/issue")
     public ResponseEntity<?> issue(@PathVariable Long couponId, @RequestBody @Valid IssueRequest request) {
         // 비동기 방식은 접수만 된 것이므로 202. 발급 완료로 집계하지 않는다.
-        HttpStatus status = request.method() == CouponIssueStrategy.REDIS_ASYNC ? HttpStatus.ACCEPTED : HttpStatus.CREATED;
+        HttpStatus status = ASYNC_METHODS.contains(request.method()) ? HttpStatus.ACCEPTED : HttpStatus.CREATED;
         return ResponseEntity.status(status)
                 .body(ApiUtils.success(labService.issue(couponId, request.memberId(), request.method(), request.duplicateCheckOrDefault())));
     }

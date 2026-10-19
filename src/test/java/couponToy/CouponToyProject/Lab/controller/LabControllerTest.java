@@ -78,7 +78,7 @@ class LabControllerTest extends AbstractCouponIssueIntegrationTestSupport {
 
         // 비동기 방식은 접수만 됐으므로 202
         postJson(issuePath, issueBody(first, method.name()))
-                .andExpect(status().is(method == CouponIssueStrategy.REDIS_ASYNC ? 202 : 201))
+                .andExpect(status().is(method == CouponIssueStrategy.REDIS_ASYNC || method == CouponIssueStrategy.REDIS_PUBSUB ? 202 : 201))
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.response.memberId").value(first))
                 .andExpect(jsonPath("$.response.couponId").value(couponId))
@@ -97,7 +97,8 @@ class LabControllerTest extends AbstractCouponIssueIntegrationTestSupport {
         // 비동기 방식은 DB 확정이 끝난 뒤에야 발급 행이 생긴다. 끝나기 전에 정리하면 다음 테스트에 섞인다.
         String resultPath = "/lab/coupons/" + couponId + "/result";
         await().until(() -> body(mockMvc.perform(get(resultPath))).path("response").path("pending").asLong() == 0);
-        mockMvc.perform(get(resultPath)).andExpect(jsonPath("$.response.issueRows").value(1));
+        // Pub/Sub 은 이 테스트에 구독자가 없으므로 메시지가 아무에게도 가지 않고 사라진다
+        mockMvc.perform(get(resultPath)).andExpect(jsonPath("$.response.issueRows").value(method == CouponIssueStrategy.REDIS_PUBSUB ? 0 : 1));
     }
 
     @Test

@@ -10,6 +10,7 @@ import couponToy.CouponToyProject.CouponIssue.service.CouponIssueStrategy;
 import couponToy.CouponToyProject.CouponIssue.service.IsolationIssueCouponService;
 import couponToy.CouponToyProject.CouponIssue.service.OptimisticIssueCouponService;
 import couponToy.CouponToyProject.CouponIssue.service.PessimisticIssueCouponService;
+import couponToy.CouponToyProject.CouponIssue.service.PubSubIssueCouponService;
 import couponToy.CouponToyProject.CouponIssue.service.RedisIssueCouponService;
 import couponToy.CouponToyProject.CouponIssue.service.RedisIssueCouponService.ReservationMethod;
 import couponToy.CouponToyProject.global.constant.ErrorCode;
@@ -49,6 +50,7 @@ public class LabService {
     private final OptimisticIssueCouponService optimisticIssueCouponService;
     private final RedisIssueCouponService redisIssueCouponService;
     private final AsyncIssueCouponService asyncIssueCouponService;
+    private final PubSubIssueCouponService pubSubIssueCouponService;
     private final CouponIssuedRedisRepository couponIssuedRedisRepository;
     private final JdbcTemplate jdbcTemplate;
     private final StringRedisTemplate redisTemplate;
@@ -83,6 +85,7 @@ public class LabService {
             Map<IssueOutcome, Long> asyncResults, // REDIS_ASYNC: 접수(ACCEPTED)된 요청의 DB 확정 결과
             long pending,                         // REDIS_ASYNC: 접수됐지만 확정 결과가 아직 없는 요청
             IssueRequestLog.Latency confirmLatencyMs, // REDIS_ASYNC: 진입 → DB 커밋 (SUCCESS 만)
+            Map<Long, Long> publishReceivers,     // REDIS_PUBSUB: PUBLISH 가 돌려준 구독자 수 → 요청 수. 완료가 아니다
             IssueRequestLog.Attempts attempts,      // 요청당 트랜잭션 시도 수 (낙관적 락 재시도)
             Map<String, Long> innodbLockMetricsDelta // 쿠폰 생성 이후 MySQL 전역 카운터 변화량
     ) {
@@ -124,6 +127,7 @@ public class LabService {
         long startedAt = System.nanoTime();
         int[] attempts = {1};
         CompletableFuture<IssueCouponResponse> confirmation = null; // REDIS_ASYNC: DB 확정이 끝나면 완료된다
+        boolean published = false; // REDIS_PUBSUB: 발행자는 확정 결과를 받지 못한다
         try {
             IssueCouponResponse response = switch (method) {
                 case READ_COMMITTED -> isolationIssueCouponService.issueWithReadCommitted(memberId, couponId, duplicateCheck);
@@ -140,8 +144,13 @@ public class LabService {
                     confirmation = asyncIssueCouponService.issue(memberId, couponId);
                     yield IssueCouponResponse.builder().memberId(memberId).couponId(couponId).build();
                 }
+                case REDIS_PUBSUB -> {
+                    log.published(pubSubIssueCouponService.issue(memberId, couponId));
+                    published = true;
+                    yield IssueCouponResponse.builder().memberId(memberId).couponId(couponId).build();
+                }
             };
-            IssueOutcome outcome = confirmation != null ? IssueOutcome.ACCEPTED : IssueOutcome.SUCCESS;
+            IssueOutcome outcome = confirmation != null ? IssueOutcome.ACCEPTED : published ? IssueOutcome.PUBLISHED : IssueOutcome.SUCCESS;
             log.complete(arrival, memberId, outcome, System.nanoTime() - startedAt, attempts[0]);
             if (confirmation != null) {
                 // DB 확정 결과는 작업 스레드에서 따로 기록한다. 202 응답은 이것을 기다리지 않는다.
@@ -198,6 +207,7 @@ public class LabService {
                 asyncResults,
                 pending,
                 log.confirmLatencyMs(),
+                log.publishReceivers(),
                 log.attempts(),
                 delta(log.lockMetricsAtStart(), readLockMetrics())
         );

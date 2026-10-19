@@ -11,5 +11,6 @@ public enum CouponIssueStrategy {
     REDIS_MULTI_EXEC,
     REDIS_WATCH,
     REDIS_LUA,
-    REDIS_ASYNC
+    REDIS_ASYNC,
+    REDIS_PUBSUB
 }

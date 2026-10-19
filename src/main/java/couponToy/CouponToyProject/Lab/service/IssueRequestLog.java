@@ -8,8 +8,10 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -49,6 +51,7 @@ public class IssueRequestLog {
     private final AtomicLong completionSeq = new AtomicLong();
     private final Queue<Entry> entries = new ConcurrentLinkedQueue<>();
     private final Queue<Entry> asyncEntries = new ConcurrentLinkedQueue<>();
+    private final Map<Long, LongAdder> publishReceivers = new ConcurrentHashMap<>();
     private final Map<String, Long> lockMetricsAtStart;
 
     public IssueRequestLog(Map<String, Long> lockMetricsAtStart) {
@@ -68,6 +71,17 @@ public class IssueRequestLog {
     public void finishAsync(long arrival, long memberId, IssueOutcome outcome, long elapsedNanos) {
         long completion = outcome == IssueOutcome.SUCCESS ? completionSeq.incrementAndGet() : 0;
         asyncEntries.add(new Entry(arrival, memberId, outcome, elapsedNanos, completion, 1));
+    }
+
+    // REDIS_PUBSUB: PUBLISH 가 돌려준 "받은 구독자 수". 확정 여부와 관계없다
+    public void published(long receivers) {
+        publishReceivers.computeIfAbsent(receivers, k -> new LongAdder()).increment();
+    }
+
+    public Map<Long, Long> publishReceivers() {
+        Map<Long, Long> counts = new TreeMap<>();
+        publishReceivers.forEach((receivers, count) -> counts.put(receivers, count.sum()));
+        return counts;
     }
 
     public Map<IssueOutcome, Long> asyncOutcomes() {

@@ -15,7 +15,7 @@ const warmupRequests = Number(__ENV.WARMUP || 0);
 const duplicateCheck = (__ENV.DUPLICATE_CHECK || 'true') !== 'false';
 
 // 202 는 접수일 뿐 발급 완료가 아니다.
-const expectedSuccessStatus = method === 'REDIS_ASYNC' ? 202 : 201;
+const expectedSuccessStatus = method === 'REDIS_ASYNC' || method === 'REDIS_PUBSUB' ? 202 : 201;
 // 409: 거절(품절, 중복), 503: 트랜잭션 실패(데드락, 락 대기 초과) 또는 비동기 큐 포화
 const expectedStatuses = new Set([expectedSuccessStatus, 409, 503]);
 const jsonHeaders = { headers: { 'Content-Type': 'application/json' } };
@@ -105,7 +105,7 @@ export const options = {
   thresholds: {
     unexpected_status_rate: ['rate<0.001'],
     server_error_rate: ['rate<0.001'],
-    coupon_issue_http_duration: [method === 'REDIS_ASYNC' ? 'p(95)<100' : 'p(95)<500'],
+    coupon_issue_http_duration: [expectedSuccessStatus === 202 ? 'p(95)<100' : 'p(95)<500'],
   },
 };
 
@@ -120,9 +120,7 @@ export function setup() {
       issue(warmup.couponId, firstMemberId + (i % memberCount), { warmup: 'true' });
     }
     // 비동기 방식은 워밍업 요청의 DB 확정이 모두 끝난 뒤 측정을 시작한다. 남은 확정이 측정과 섞이지 않게.
-    while (labResult(warmup.couponId).pending > 0) {
-      sleep(0.05);
-    }
+    waitConfirmed(warmup.couponId);
   }
 
   const coupon = postJson('/lab/coupons', { name: `k6-${method}-${scenarioName}`, totalCount });
@@ -158,24 +156,44 @@ export default function (data) {
   });
 }
 
-// 진입점이 기록한 결과와 DB 상태. REDIS_ASYNC 는 접수된 요청의 DB 확정이 모두 끝날 때까지(pending 0) 다시 조회한다.
-// 확정 완료 시각은 50ms 간격 조회로 잰다.
+// 진입점이 기록한 결과와 DB 상태. 비동기 방식은 확정이 끝날 때까지 다시 조회한 뒤 출력한다.
 export function teardown(data) {
   const acceptedSeconds = (Date.now() - data.startedAt) / 1000;
-  let result = labResult(data.couponId);
-  const pendingAtLastResponse = result.pending;
-  const deadline = Date.now() + 120000;
-  while (result.pending > 0 && Date.now() < deadline) {
-    sleep(0.05);
-    result = labResult(data.couponId);
-  }
-  const confirmedSeconds = (Date.now() - data.startedAt) / 1000;
+  const unfinishedAtLastResponse = unfinished(labResult(data.couponId));
+  const { result, confirmedAt } = waitConfirmed(data.couponId);
+  const confirmedSeconds = (confirmedAt - data.startedAt) / 1000;
   const requests = Object.values(result.requests).reduce((sum, count) => sum + count, 0);
-  const completed = method === 'REDIS_ASYNC' ? (result.asyncResults.SUCCESS || 0) : (result.requests.SUCCESS || 0);
   console.log(`lab result (GET /lab/coupons/${data.couponId}/result)\n${JSON.stringify(result, null, 2)}`);
   console.log(`elapsed=${acceptedSeconds.toFixed(2)}s 접수 처리량=${(requests / acceptedSeconds).toFixed(1)} req/s `
-    + `발급 완료 처리량=${(completed / confirmedSeconds).toFixed(1)} req/s `
-    + `(확정까지 ${confirmedSeconds.toFixed(2)}s, 마지막 응답 시점 미완료 ${pendingAtLastResponse}, 남은 미완료 ${result.pending})`);
+    + `발급 완료 처리량=${(result.issueRows / confirmedSeconds).toFixed(1)} req/s `
+    + `(확정까지 ${confirmedSeconds.toFixed(2)}s, 마지막 응답 시점 미완료 ${unfinishedAtLastResponse}, 남은 미완료 ${unfinished(result)})`);
+}
+
+// 아직 확정 결과가 없는 요청 수. REDIS_ASYNC 는 진입점이 아는 미완료(pending),
+// REDIS_PUBSUB 은 발행자가 결과를 받지 못하므로 Redis 에만 예약이 있는 회원 수로 본다.
+function unfinished(result) {
+  if (method === 'REDIS_ASYNC') return result.pending;
+  if (method === 'REDIS_PUBSUB') return result.redisOnlyMembers;
+  return 0;
+}
+
+// 미완료가 0 이 되거나, 2초 동안 줄지 않거나(유실), 120초가 지날 때까지 50ms 간격으로 다시 조회한다.
+// 확정 시각은 마지막으로 미완료가 줄어든 때다(유실이면 그 뒤 2초는 넣지 않는다).
+function waitConfirmed(couponId) {
+  let result = labResult(couponId);
+  let last = unfinished(result);
+  let confirmedAt = Date.now();
+  const deadline = Date.now() + 120000;
+  while (unfinished(result) > 0 && Date.now() < deadline && Date.now() - confirmedAt < 2000) {
+    sleep(0.05);
+    result = labResult(couponId);
+    if (unfinished(result) !== last) {
+      last = unfinished(result);
+      confirmedAt = Date.now();
+    }
+  }
+  if (unfinished(result) === 0) confirmedAt = Date.now();
+  return { result, confirmedAt };
 }
 
 function labResult(couponId) {
