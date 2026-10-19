@@ -22,7 +22,9 @@ public class FailurePoints {
         DB_BEFORE_COMMIT,           // DB 확정 트랜잭션 안, 커밋 전
         BEFORE_CANCEL,              // DB 확정 실패 후 Redis 예약을 되돌리는 SREM 전
         ASYNC_BEFORE_CONFIRM,       // 4단계: 작업 스레드가 스레드 풀 큐에서 작업을 꺼낸 뒤 DB 확정 전
-        PUBSUB_BEFORE_CONFIRM       // 5단계: 구독자의 작업 스레드가 메시지 처리를 시작한 뒤 DB 확정 전
+        PUBSUB_BEFORE_CONFIRM,      // 5단계: 구독자의 작업 스레드가 메시지 처리를 시작한 뒤 DB 확정 전
+        STREAM_BEFORE_CONFIRM,      // 6단계: 소비자가 메시지를 읽은 뒤 DB 확정 전
+        STREAM_BEFORE_ACK           // 6단계: DB 커밋 뒤 ACK 전
     }
 
     public interface Action {

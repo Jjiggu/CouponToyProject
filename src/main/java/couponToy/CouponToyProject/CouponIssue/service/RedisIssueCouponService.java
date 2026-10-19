@@ -50,6 +50,15 @@ public class RedisIssueCouponService {
             case WATCH -> couponIssuedRedisRepository.reserveWithWatch(couponId, memberId, totalCount, onAttempt);
             case LUA -> couponIssuedRedisRepository.reserveWithLua(couponId, memberId, totalCount);
         };
+        reject(reservation);
+    }
+
+    // 6단계 최소 개선: Lua 예약과 같은 판단이지만, 예약하면서 같은 스크립트 안에서 스트림에 확정 요청을 넣는다
+    public void reserveAndEnqueue(Long memberId, Long couponId, String streamKey) {
+        reject(couponIssuedRedisRepository.reserveAndEnqueueWithLua(couponId, memberId, totalCount(couponId), streamKey));
+    }
+
+    private static void reject(Reservation reservation) {
         if (reservation == Reservation.DUPLICATE) {
             throw new IsAlreadyIssued(ErrorCode.IS_ALREADY_ISSUED);
         }

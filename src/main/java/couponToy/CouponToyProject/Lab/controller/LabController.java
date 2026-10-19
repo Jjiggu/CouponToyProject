@@ -27,7 +27,8 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class LabController {
 
-    private static final Set<CouponIssueStrategy> ASYNC_METHODS = EnumSet.of(CouponIssueStrategy.REDIS_ASYNC, CouponIssueStrategy.REDIS_PUBSUB);
+    private static final Set<CouponIssueStrategy> ASYNC_METHODS = EnumSet.of(
+            CouponIssueStrategy.REDIS_ASYNC, CouponIssueStrategy.REDIS_PUBSUB, CouponIssueStrategy.REDIS_STREAM, CouponIssueStrategy.REDIS_STREAM_ATOMIC);
 
     private final LabService labService;
 

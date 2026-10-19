@@ -15,7 +15,9 @@ const warmupRequests = Number(__ENV.WARMUP || 0);
 const duplicateCheck = (__ENV.DUPLICATE_CHECK || 'true') !== 'false';
 
 // 202 는 접수일 뿐 발급 완료가 아니다.
-const expectedSuccessStatus = method === 'REDIS_ASYNC' || method === 'REDIS_PUBSUB' ? 202 : 201;
+// 202: 비동기 방식(넘기기만 하고 확정은 나중)
+const handedOff = ['REDIS_PUBSUB', 'REDIS_STREAM', 'REDIS_STREAM_ATOMIC'].includes(method);
+const expectedSuccessStatus = method === 'REDIS_ASYNC' || handedOff ? 202 : 201;
 // 409: 거절(품절, 중복), 503: 트랜잭션 실패(데드락, 락 대기 초과) 또는 비동기 큐 포화
 const expectedStatuses = new Set([expectedSuccessStatus, 409, 503]);
 const jsonHeaders = { headers: { 'Content-Type': 'application/json' } };
@@ -170,21 +172,24 @@ export function teardown(data) {
 }
 
 // 아직 확정 결과가 없는 요청 수. REDIS_ASYNC 는 진입점이 아는 미완료(pending),
-// REDIS_PUBSUB 은 발행자가 결과를 받지 못하므로 Redis 에만 예약이 있는 회원 수로 본다.
+// Pub/Sub·Stream 은 발행자가 결과를 받지 못하므로 Redis 에만 예약이 있는 회원 수로 본다.
 function unfinished(result) {
   if (method === 'REDIS_ASYNC') return result.pending;
-  if (method === 'REDIS_PUBSUB') return result.redisOnlyMembers;
+  if (handedOff) return result.redisOnlyMembers;
   return 0;
 }
 
-// 미완료가 0 이 되거나, 2초 동안 줄지 않거나(유실), 120초가 지날 때까지 50ms 간격으로 다시 조회한다.
-// 확정 시각은 마지막으로 미완료가 줄어든 때다(유실이면 그 뒤 2초는 넣지 않는다).
+// 줄지 않고 멈춘 것을 유실로 볼 때까지 기다리는 시간. Stream 은 실패한 메시지를 회수해 다시 처리하므로(기본 5초 뒤) 더 길게 둔다.
+const stallMillis = method.startsWith('REDIS_STREAM') ? 10000 : 2000;
+
+// 미완료가 0 이 되거나, stallMillis 동안 줄지 않거나(유실), 120초가 지날 때까지 50ms 간격으로 다시 조회한다.
+// 확정 시각은 마지막으로 미완료가 줄어든 때다(유실이면 그 뒤 기다린 시간은 넣지 않는다).
 function waitConfirmed(couponId) {
   let result = labResult(couponId);
   let last = unfinished(result);
   let confirmedAt = Date.now();
   const deadline = Date.now() + 120000;
-  while (unfinished(result) > 0 && Date.now() < deadline && Date.now() - confirmedAt < 2000) {
+  while (unfinished(result) > 0 && Date.now() < deadline && Date.now() - confirmedAt < stallMillis) {
     sleep(0.05);
     result = labResult(couponId);
     if (unfinished(result) !== last) {

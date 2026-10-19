@@ -21,6 +21,7 @@ public enum IssueOutcome {
     SUCCESS,            // DB 커밋까지 끝난 발급
     ACCEPTED,           // 접수만 됨 (비동기). 발급 완료가 아니다.
     PUBLISHED,          // 5단계: PUBLISH 까지 끝남(HTTP 202). 받은 구독자 수와 관계없이 발급 완료가 아니다
+    QUEUED,             // 6단계: XADD 로 스트림에 남김(HTTP 202). 발급 완료가 아니다
     SOLD_OUT,
     SOLD_OUT_AT_DB,     // Redis 예약은 통과했지만 DB 조건부 UPDATE 가 막은 품절 (Redis 와 DB 가 어긋남)
     DUPLICATE,          // 애플리케이션 중복 확인이 막음

@@ -41,6 +41,20 @@ public class CouponIssuedRedisRepository {
             return 0
             """, Long.class);
 
+    // 6단계 최소 개선: 위와 같은 판단 뒤, 예약과 스트림 등록(XADD)을 한 실행 안에서 한다.
+    // Lua 는 실행 중 오류가 나도 앞서 실행한 명령을 되돌리지 않는다. 그래서 실패할 수 있는 XADD 를 SADD 보다 먼저 둔다.
+    private static final DefaultRedisScript<Long> RESERVE_AND_ENQUEUE_SCRIPT = new DefaultRedisScript<>("""
+            if redis.call('SISMEMBER', KEYS[1], ARGV[1]) == 1 then
+              return 1
+            end
+            if redis.call('SCARD', KEYS[1]) >= tonumber(ARGV[2]) then
+              return 2
+            end
+            redis.call('XADD', KEYS[2], '*', 'memberId', ARGV[1], 'couponId', ARGV[3])
+            redis.call('SADD', KEYS[1], ARGV[1])
+            return 0
+            """, Long.class);
+
     private final StringRedisTemplate redisTemplate;
     private final FailurePoints failurePoints;
     private final int watchMaxAttempts;
@@ -149,6 +163,19 @@ public class CouponIssuedRedisRepository {
     public Reservation reserveWithLua(Long couponId, Long memberId, int totalCount) {
         Long code = redisTemplate.execute(RESERVE_SCRIPT, List.of(issuedKey(couponId)),
                 String.valueOf(memberId), String.valueOf(totalCount));
+        return reservation(code);
+    }
+
+    /**
+     * 6단계: Lua 예약과 같은 판단으로 예약하면서, 같은 스크립트 안에서 확정 요청을 스트림에 넣는다(EVALSHA 한 번).
+     */
+    public Reservation reserveAndEnqueueWithLua(Long couponId, Long memberId, int totalCount, String streamKey) {
+        Long code = redisTemplate.execute(RESERVE_AND_ENQUEUE_SCRIPT, List.of(issuedKey(couponId), streamKey),
+                String.valueOf(memberId), String.valueOf(totalCount), String.valueOf(couponId));
+        return reservation(code);
+    }
+
+    private static Reservation reservation(Long code) {
         return switch (code.intValue()) {
             case 0 -> Reservation.RESERVED;
             case 1 -> Reservation.DUPLICATE;
