@@ -23,7 +23,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -431,34 +430,6 @@ class RedisReservationTest extends ConcurrencyExperimentSupport {
     static final class SimulatedCrash extends Error {
         SimulatedCrash() {
             super("프로세스 강제 종료 흉내", null, false, false);
-        }
-    }
-
-    /** 실패 지점에 도달한 요청을 멈췄다가 놓아준다. */
-    static final class Pause implements FailurePoints.Action {
-        private final CountDownLatch reached = new CountDownLatch(1);
-        private final CountDownLatch released = new CountDownLatch(1);
-
-        @Override
-        public void run() {
-            reached.countDown();
-            try {
-                released.await(10, SECONDS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-
-        void awaitReached() throws InterruptedException {
-            assertThat(reached.await(10, SECONDS)).as("실패 지점 도달").isTrue();
-        }
-
-        boolean reachedWithin(int seconds) throws InterruptedException {
-            return reached.await(seconds, SECONDS);
-        }
-
-        void release() {
-            released.countDown();
         }
     }
 }

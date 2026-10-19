@@ -11,11 +11,13 @@ import java.util.TreeMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * 쿠폰 하나에 대해 단일 진입점(LabService.issue)에서 관찰한 요청 기록. 애플리케이션 메모리에만 있다.
  * - 도착 순서: 진입 시 AtomicLong 을 증가시킨 순서
- * - 완료 순서: 동기 발급이 커밋을 마치고 반환된 순서 (비동기 접수는 완료 순서가 없다)
+ * - 완료 순서: DB 확정이 커밋을 마친 순서. 동기 방식은 반환 시점, 비동기(REDIS_ASYNC)는 풀 스레드가 확정을 끝낸 시점
+ * - 비동기 요청은 두 번 기록된다: 진입점이 돌려준 접수 결과(entries)와, 나중에 풀 스레드가 끝낸 확정 결과(asyncEntries)
  *
  * ponytail: 요청마다 Entry 를 무제한 쌓는다. 수천~수만 건 실험용이다.
  * step/soak 처럼 수백만 건을 보내면 수백 MB 가 되므로, 그때 상한이나 샘플링을 넣는다.
@@ -46,6 +48,7 @@ public class IssueRequestLog {
     private final AtomicLong arrivalSeq = new AtomicLong();
     private final AtomicLong completionSeq = new AtomicLong();
     private final Queue<Entry> entries = new ConcurrentLinkedQueue<>();
+    private final Queue<Entry> asyncEntries = new ConcurrentLinkedQueue<>();
     private final Map<String, Long> lockMetricsAtStart;
 
     public IssueRequestLog(Map<String, Long> lockMetricsAtStart) {
@@ -61,6 +64,23 @@ public class IssueRequestLog {
         entries.add(new Entry(arrival, memberId, outcome, elapsedNanos, completion, attempts));
     }
 
+    // elapsedNanos 는 진입 → 확정 끝(커밋 또는 실패). 접수(ACCEPTED) 기록 뒤에만 불린다.
+    public void finishAsync(long arrival, long memberId, IssueOutcome outcome, long elapsedNanos) {
+        long completion = outcome == IssueOutcome.SUCCESS ? completionSeq.incrementAndGet() : 0;
+        asyncEntries.add(new Entry(arrival, memberId, outcome, elapsedNanos, completion, 1));
+    }
+
+    public Map<IssueOutcome, Long> asyncOutcomes() {
+        return count(asyncEntries);
+    }
+
+    // 접수됐지만 확정 결과가 아직 없는 요청: 큐에서 기다리거나, 처리 중이거나, 사라졌다
+    // 확정 결과 수를 먼저 센다. 접수 기록이 확정 결과보다 먼저 쌓이므로, 이 순서면 음수가 되지 않고 0 이면 정말 모두 끝난 것이다.
+    public long pending() {
+        long finished = asyncEntries.size();
+        return entries.stream().filter(e -> e.outcome() == IssueOutcome.ACCEPTED).count() - finished;
+    }
+
     public Map<String, Long> lockMetricsAtStart() {
         return lockMetricsAtStart;
     }
@@ -70,6 +90,10 @@ public class IssueRequestLog {
     }
 
     public Map<IssueOutcome, Long> countByOutcome() {
+        return count(entries);
+    }
+
+    private static Map<IssueOutcome, Long> count(Collection<Entry> entries) {
         return entries.stream().collect(Collectors.groupingBy(Entry::outcome, () -> new EnumMap<>(IssueOutcome.class), Collectors.counting()));
     }
 
@@ -87,7 +111,7 @@ public class IssueRequestLog {
         Set<Long> winners = new HashSet<>(winnerMemberIds);
 
         // 완료 순번은 SUCCESS 에만 1..k 로 붙는다. 도착 순으로 정렬했을 때 i 번째가 i 번째로 완료됐는지 본다.
-        List<Entry> successesByArrival = entries.stream()
+        List<Entry> successesByArrival = Stream.concat(entries.stream(), asyncEntries.stream())
                 .filter(e -> e.completionSeq() > 0)
                 .sorted((a, b) -> Long.compare(a.arrivalSeq(), b.arrivalSeq()))
                 .toList();
@@ -116,8 +140,16 @@ public class IssueRequestLog {
     }
 
     public Latency latencyMs(boolean successOnly) {
-        double[] millis = entries.stream()
-                .filter(e -> !successOnly || e.outcome() == IssueOutcome.SUCCESS)
+        return latency(entries.stream().filter(e -> !successOnly || e.outcome() == IssueOutcome.SUCCESS));
+    }
+
+    // 비동기 요청의 진입 → DB 커밋 (SUCCESS 만)
+    public Latency confirmLatencyMs() {
+        return latency(asyncEntries.stream().filter(e -> e.outcome() == IssueOutcome.SUCCESS));
+    }
+
+    private static Latency latency(Stream<Entry> selected) {
+        double[] millis = selected
                 .mapToDouble(e -> e.elapsedNanos() / 1_000_000.0)
                 .sorted()
                 .toArray();

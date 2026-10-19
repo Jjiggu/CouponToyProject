@@ -6,6 +6,7 @@ import couponToy.CouponToyProject.CouponIssue.service.CouponIssueStrategy;
 import couponToy.CouponToyProject.Lab.service.IssueOutcome;
 import couponToy.CouponToyProject.Lab.service.LabService;
 import couponToy.CouponToyProject.Lab.service.LabService.LabResult;
+import couponToy.CouponToyProject.global.failure.FailurePoints;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -28,6 +29,7 @@ import java.util.concurrent.Future;
 import java.util.stream.LongStream;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * 단계별 동시성 실험 공통 장치: 실행 순서를 고정한 두 트랜잭션 재현, 동시 요청, 결과 기록.
@@ -239,6 +241,34 @@ public abstract class ConcurrencyExperimentSupport extends AbstractCouponIssueIn
             } catch (IOException e) {
                 throw new IllegalStateException(e);
             }
+        }
+    }
+
+    /** 실패 지점에 도달한 요청을 멈췄다가 놓아준다. */
+    public static final class Pause implements FailurePoints.Action {
+        private final CountDownLatch reached = new CountDownLatch(1);
+        private final CountDownLatch released = new CountDownLatch(1);
+
+        @Override
+        public void run() {
+            reached.countDown();
+            try {
+                released.await(10, SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        public void awaitReached() throws InterruptedException {
+            assertThat(reached.await(10, SECONDS)).as("실패 지점 도달").isTrue();
+        }
+
+        public boolean reachedWithin(int seconds) throws InterruptedException {
+            return reached.await(seconds, SECONDS);
+        }
+
+        public void release() {
+            released.countDown();
         }
     }
 }

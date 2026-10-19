@@ -20,7 +20,8 @@ public class FailurePoints {
         WATCH_BEFORE_EXEC,          // WATCH 예약: 읽고 확인한 뒤 MULTI/EXEC 전
         AFTER_RESERVE,              // Redis 예약 성공 후 DB 확정 전
         DB_BEFORE_COMMIT,           // DB 확정 트랜잭션 안, 커밋 전
-        BEFORE_CANCEL               // DB 확정 실패 후 Redis 예약을 되돌리는 SREM 전
+        BEFORE_CANCEL,              // DB 확정 실패 후 Redis 예약을 되돌리는 SREM 전
+        ASYNC_BEFORE_CONFIRM        // 4단계: 풀 스레드가 큐에서 작업을 꺼낸 뒤 DB 확정 전
     }
 
     public interface Action {

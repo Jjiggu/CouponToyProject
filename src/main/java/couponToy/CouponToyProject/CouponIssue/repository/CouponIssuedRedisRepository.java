@@ -1,8 +1,5 @@
 package couponToy.CouponToyProject.CouponIssue.repository;
 
-import couponToy.CouponToyProject.global.constant.ErrorCode;
-import couponToy.CouponToyProject.global.exception.CouponSoldOutException;
-import couponToy.CouponToyProject.global.exception.IsAlreadyIssued;
 import couponToy.CouponToyProject.global.failure.FailurePoints;
 import couponToy.CouponToyProject.global.failure.FailurePoints.Point;
 import org.springframework.beans.factory.annotation.Value;
@@ -157,19 +154,6 @@ public class CouponIssuedRedisRepository {
             case 1 -> Reservation.DUPLICATE;
             default -> Reservation.SOLD_OUT;
         };
-    }
-
-    /**
-     * 기존 호출부(EventIssueCouponService)용: MULTI/EXEC 예약 결과를 예외로 바꾼다.
-     */
-    public void checkAndRegister(Long couponId, Long userId, int totalCount) {
-        Reservation reservation = reserveWithMultiExec(couponId, userId, totalCount);
-        if (reservation == Reservation.DUPLICATE) {
-            throw new IsAlreadyIssued(ErrorCode.IS_ALREADY_ISSUED);
-        }
-        if (reservation == Reservation.SOLD_OUT) {
-            throw new CouponSoldOutException(ErrorCode.COUPON_SOLD_OUT);
-        }
     }
 
     /**

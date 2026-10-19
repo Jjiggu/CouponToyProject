@@ -9,6 +9,7 @@ import couponToy.CouponToyProject.global.exception.MemberNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.dao.PessimisticLockingFailureException;
@@ -84,6 +85,18 @@ public class GlobalControllerAdvice {
                 .status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(
                         ApiUtils.error(ErrorCode.OPTIMISTIC_CONFLICT.getMessage(), HttpStatus.SERVICE_UNAVAILABLE)
+                );
+    }
+
+    // 비동기 큐가 가득 차 접수하지 못함: 거절이 아니라 나중에 다시 보내면 받을 수 있으므로 503
+    @ExceptionHandler(TaskRejectedException.class)
+    public ResponseEntity<?> handleTaskRejectedException(TaskRejectedException ex) {
+        log.error("handling : {}, message : {}", ex.getClass().toString(), ex.getMessage());
+
+        return ResponseEntity
+                .status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(
+                        ApiUtils.error(ErrorCode.ASYNC_QUEUE_FULL.getMessage(), HttpStatus.SERVICE_UNAVAILABLE)
                 );
     }
 

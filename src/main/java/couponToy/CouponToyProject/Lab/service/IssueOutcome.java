@@ -6,9 +6,11 @@ import couponToy.CouponToyProject.global.exception.CouponSoldOutException;
 import couponToy.CouponToyProject.global.exception.IsAlreadyIssued;
 import couponToy.CouponToyProject.global.exception.MemberNotFoundException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.dao.OptimisticLockingFailureException;
 
 import java.sql.SQLException;
+import java.util.concurrent.CompletionException;
 
 /**
  * 실험 진입점에서 관찰한 요청 하나의 결과.
@@ -25,6 +27,7 @@ public enum IssueOutcome {
     DEADLOCK,           // MySQL 1213: 데드락 희생자로 롤백
     LOCK_WAIT_TIMEOUT,  // MySQL 1205: innodb_lock_wait_timeout 초과
     OPTIMISTIC_CONFLICT, // 커밋 시 version 검사 실패 (재시도가 있으면 재시도를 모두 쓴 뒤)
+    REJECTED,           // 비동기 큐가 가득 차 접수하지 않음 (TaskRejectedException)
     NOT_FOUND,
     ERROR;
 
@@ -32,6 +35,8 @@ public enum IssueOutcome {
     private static final int MYSQL_LOCK_WAIT_TIMEOUT = 1205;
 
     public static IssueOutcome of(Throwable e) {
+        if (e instanceof CompletionException && e.getCause() != null) return of(e.getCause()); // 비동기 확정 결과
+        if (e instanceof TaskRejectedException) return REJECTED;
         if (e instanceof CouponSoldOutAtDbException) return SOLD_OUT_AT_DB;
         if (e instanceof CouponSoldOutException) return SOLD_OUT;
         if (e instanceof IsAlreadyIssued) return DUPLICATE;

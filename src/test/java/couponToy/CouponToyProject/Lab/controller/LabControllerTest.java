@@ -16,6 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
+import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -77,7 +78,7 @@ class LabControllerTest extends AbstractCouponIssueIntegrationTestSupport {
 
         // 비동기 방식은 접수만 됐으므로 202
         postJson(issuePath, issueBody(first, method.name()))
-                .andExpect(status().is(method == CouponIssueStrategy.REDIS_EVENT ? 202 : 201))
+                .andExpect(status().is(method == CouponIssueStrategy.REDIS_ASYNC ? 202 : 201))
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.response.memberId").value(first))
                 .andExpect(jsonPath("$.response.couponId").value(couponId))
@@ -92,6 +93,11 @@ class LabControllerTest extends AbstractCouponIssueIntegrationTestSupport {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.message").value("쿠폰이 모두 소진되었습니다."))
                 .andExpect(jsonPath("$.error.status").value(409));
+
+        // 비동기 방식은 DB 확정이 끝난 뒤에야 발급 행이 생긴다. 끝나기 전에 정리하면 다음 테스트에 섞인다.
+        String resultPath = "/lab/coupons/" + couponId + "/result";
+        await().until(() -> body(mockMvc.perform(get(resultPath))).path("response").path("pending").asLong() == 0);
+        mockMvc.perform(get(resultPath)).andExpect(jsonPath("$.response.issueRows").value(1));
     }
 
     @Test

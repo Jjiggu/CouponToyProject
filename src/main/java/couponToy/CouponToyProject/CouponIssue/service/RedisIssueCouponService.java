@@ -12,8 +12,10 @@ import couponToy.CouponToyProject.global.failure.FailurePoints;
 import couponToy.CouponToyProject.global.failure.FailurePoints.Point;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.function.IntConsumer;
 
 /**
@@ -32,6 +34,14 @@ public class RedisIssueCouponService {
     private final FailurePoints failurePoints;
 
     public IssueCouponResponse issue(Long memberId, Long couponId, ReservationMethod method, IntConsumer onAttempt) {
+        reserve(memberId, couponId, method, onAttempt);
+        // 여기서 프로세스가 죽으면 Redis 예약만 남는다. 되돌릴 근거가 Redis 와 DB 어디에도 없다.
+        failurePoints.reach(Point.AFTER_RESERVE, memberId);
+        return confirmOrCancel(memberId, couponId);
+    }
+
+    // 발급 자격 예약. 이미 예약된 회원이면 IsAlreadyIssued, 재고가 없으면 CouponSoldOutException.
+    public void reserve(Long memberId, Long couponId, ReservationMethod method, IntConsumer onAttempt) {
         int totalCount = totalCount(couponId);
 
         Reservation reservation = switch (method) {
@@ -46,9 +56,20 @@ public class RedisIssueCouponService {
         if (reservation == Reservation.SOLD_OUT) {
             throw new CouponSoldOutException(ErrorCode.COUPON_SOLD_OUT);
         }
+    }
 
-        // 여기서 프로세스가 죽으면 Redis 예약만 남는다. 되돌릴 근거가 Redis 와 DB 어디에도 없다.
-        failurePoints.reach(Point.AFTER_RESERVE, memberId);
+    /**
+     * 4단계: 같은 확정·보상을 couponIssueExecutor 스레드에서 실행한다. 다른 빈이 호출해야 @Async 프록시를 지난다.
+     * 호출하면 작업을 풀 큐에 넣고 바로 돌아온다. 큐가 가득 차면 넣지 못하고 호출한 스레드에서 TaskRejectedException.
+     * 반환한 future 는 커밋되면 응답으로, 실패하면 그 예외로 끝난다.
+     */
+    @Async("couponIssueExecutor")
+    public CompletableFuture<IssueCouponResponse> confirmLater(Long memberId, Long couponId) {
+        failurePoints.reach(Point.ASYNC_BEFORE_CONFIRM, memberId);
+        return CompletableFuture.completedFuture(confirmOrCancel(memberId, couponId));
+    }
+
+    private IssueCouponResponse confirmOrCancel(Long memberId, Long couponId) {
         try {
             return issueConfirmService.confirm(memberId, couponId);
         } catch (DataIntegrityViolationException e) {

@@ -1,5 +1,5 @@
 import http from 'k6/http';
-import { check } from 'k6';
+import { check, sleep } from 'k6';
 import exec from 'k6/execution';
 import { Counter, Rate, Trend } from 'k6/metrics';
 
@@ -15,8 +15,8 @@ const warmupRequests = Number(__ENV.WARMUP || 0);
 const duplicateCheck = (__ENV.DUPLICATE_CHECK || 'true') !== 'false';
 
 // 202 는 접수일 뿐 발급 완료가 아니다.
-const expectedSuccessStatus = method === 'REDIS_EVENT' ? 202 : 201;
-// 409: 거절(품절, 중복), 503: 트랜잭션 실패(데드락, 락 대기 초과)
+const expectedSuccessStatus = method === 'REDIS_ASYNC' ? 202 : 201;
+// 409: 거절(품절, 중복), 503: 트랜잭션 실패(데드락, 락 대기 초과) 또는 비동기 큐 포화
 const expectedStatuses = new Set([expectedSuccessStatus, 409, 503]);
 const jsonHeaders = { headers: { 'Content-Type': 'application/json' } };
 
@@ -105,7 +105,7 @@ export const options = {
   thresholds: {
     unexpected_status_rate: ['rate<0.001'],
     server_error_rate: ['rate<0.001'],
-    coupon_issue_http_duration: [method === 'REDIS_EVENT' ? 'p(95)<100' : 'p(95)<500'],
+    coupon_issue_http_duration: [method === 'REDIS_ASYNC' ? 'p(95)<100' : 'p(95)<500'],
   },
 };
 
@@ -118,6 +118,10 @@ export function setup() {
     const warmup = postJson('/lab/coupons', { name: `warmup-${method}`, totalCount: warmupRequests });
     for (let i = 0; i < warmupRequests; i += 1) {
       issue(warmup.couponId, firstMemberId + (i % memberCount), { warmup: 'true' });
+    }
+    // 비동기 방식은 워밍업 요청의 DB 확정이 모두 끝난 뒤 측정을 시작한다. 남은 확정이 측정과 섞이지 않게.
+    while (labResult(warmup.couponId).pending > 0) {
+      sleep(0.05);
     }
   }
 
@@ -154,15 +158,28 @@ export default function (data) {
   });
 }
 
-// 진입점이 기록한 결과와 DB 상태. 비동기 방식은 처리가 끝난 뒤 다시 조회해야 한다.
+// 진입점이 기록한 결과와 DB 상태. REDIS_ASYNC 는 접수된 요청의 DB 확정이 모두 끝날 때까지(pending 0) 다시 조회한다.
+// 확정 완료 시각은 50ms 간격 조회로 잰다.
 export function teardown(data) {
-  const elapsedSeconds = (Date.now() - data.startedAt) / 1000;
-  const result = http.get(`${baseUrl}/lab/coupons/${data.couponId}/result`).json('response');
+  const acceptedSeconds = (Date.now() - data.startedAt) / 1000;
+  let result = labResult(data.couponId);
+  const pendingAtLastResponse = result.pending;
+  const deadline = Date.now() + 120000;
+  while (result.pending > 0 && Date.now() < deadline) {
+    sleep(0.05);
+    result = labResult(data.couponId);
+  }
+  const confirmedSeconds = (Date.now() - data.startedAt) / 1000;
   const requests = Object.values(result.requests).reduce((sum, count) => sum + count, 0);
-  const completed = result.requests.SUCCESS || 0;
+  const completed = method === 'REDIS_ASYNC' ? (result.asyncResults.SUCCESS || 0) : (result.requests.SUCCESS || 0);
   console.log(`lab result (GET /lab/coupons/${data.couponId}/result)\n${JSON.stringify(result, null, 2)}`);
-  console.log(`elapsed=${elapsedSeconds.toFixed(2)}s 접수 처리량=${(requests / elapsedSeconds).toFixed(1)} req/s `
-    + `발급 완료 처리량(동기 SUCCESS)=${(completed / elapsedSeconds).toFixed(1)} req/s`);
+  console.log(`elapsed=${acceptedSeconds.toFixed(2)}s 접수 처리량=${(requests / acceptedSeconds).toFixed(1)} req/s `
+    + `발급 완료 처리량=${(completed / confirmedSeconds).toFixed(1)} req/s `
+    + `(확정까지 ${confirmedSeconds.toFixed(2)}s, 마지막 응답 시점 미완료 ${pendingAtLastResponse}, 남은 미완료 ${result.pending})`);
+}
+
+function labResult(couponId) {
+  return http.get(`${baseUrl}/lab/coupons/${couponId}/result`).json('response');
 }
 
 function issue(couponId, memberId, tags) {

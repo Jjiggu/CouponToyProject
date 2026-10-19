@@ -4,9 +4,9 @@ import couponToy.CouponToyProject.Coupon.dto.CouponCreateRequest;
 import couponToy.CouponToyProject.Coupon.dto.CouponCreateResponse;
 import couponToy.CouponToyProject.Coupon.service.CouponService;
 import couponToy.CouponToyProject.CouponIssue.dto.IssueCouponResponse;
+import couponToy.CouponToyProject.CouponIssue.service.AsyncIssueCouponService;
 import couponToy.CouponToyProject.CouponIssue.repository.CouponIssuedRedisRepository;
 import couponToy.CouponToyProject.CouponIssue.service.CouponIssueStrategy;
-import couponToy.CouponToyProject.CouponIssue.service.EventIssueCouponService;
 import couponToy.CouponToyProject.CouponIssue.service.IsolationIssueCouponService;
 import couponToy.CouponToyProject.CouponIssue.service.OptimisticIssueCouponService;
 import couponToy.CouponToyProject.CouponIssue.service.PessimisticIssueCouponService;
@@ -25,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.IntStream;
 
@@ -47,7 +48,7 @@ public class LabService {
     private final PessimisticIssueCouponService pessimisticIssueCouponService;
     private final OptimisticIssueCouponService optimisticIssueCouponService;
     private final RedisIssueCouponService redisIssueCouponService;
-    private final EventIssueCouponService eventIssueCouponService;
+    private final AsyncIssueCouponService asyncIssueCouponService;
     private final CouponIssuedRedisRepository couponIssuedRedisRepository;
     private final JdbcTemplate jdbcTemplate;
     private final StringRedisTemplate redisTemplate;
@@ -77,8 +78,11 @@ public class LabService {
             Checks checks,
             Map<IssueOutcome, Long> requests,     // 진입점에서 관찰한 요청 결과
             IssueRequestLog.Ordering ordering,
-            IssueRequestLog.Latency latencyMs,    // 진입 → 반환. 동기 방식은 DB 커밋 포함
+            IssueRequestLog.Latency latencyMs,    // 진입 → 반환. 동기 방식은 DB 커밋 포함, REDIS_ASYNC 는 접수까지
             IssueRequestLog.Latency successLatencyMs,
+            Map<IssueOutcome, Long> asyncResults, // REDIS_ASYNC: 접수(ACCEPTED)된 요청의 DB 확정 결과
+            long pending,                         // REDIS_ASYNC: 접수됐지만 확정 결과가 아직 없는 요청
+            IssueRequestLog.Latency confirmLatencyMs, // REDIS_ASYNC: 진입 → DB 커밋 (SUCCESS 만)
             IssueRequestLog.Attempts attempts,      // 요청당 트랜잭션 시도 수 (낙관적 락 재시도)
             Map<String, Long> innodbLockMetricsDelta // 쿠폰 생성 이후 MySQL 전역 카운터 변화량
     ) {
@@ -119,6 +123,7 @@ public class LabService {
         long arrival = log.arrive();
         long startedAt = System.nanoTime();
         int[] attempts = {1};
+        CompletableFuture<IssueCouponResponse> confirmation = null; // REDIS_ASYNC: DB 확정이 끝나면 완료된다
         try {
             IssueCouponResponse response = switch (method) {
                 case READ_COMMITTED -> isolationIssueCouponService.issueWithReadCommitted(memberId, couponId, duplicateCheck);
@@ -131,10 +136,18 @@ public class LabService {
                 case REDIS_MULTI_EXEC -> redisIssueCouponService.issue(memberId, couponId, ReservationMethod.MULTI_EXEC, n -> attempts[0] = n);
                 case REDIS_WATCH -> redisIssueCouponService.issue(memberId, couponId, ReservationMethod.WATCH, n -> attempts[0] = n);
                 case REDIS_LUA -> redisIssueCouponService.issue(memberId, couponId, ReservationMethod.LUA, n -> attempts[0] = n);
-                case REDIS_EVENT -> eventIssueCouponService.issueCoupon(memberId, couponId);
+                case REDIS_ASYNC -> {
+                    confirmation = asyncIssueCouponService.issue(memberId, couponId);
+                    yield IssueCouponResponse.builder().memberId(memberId).couponId(couponId).build();
+                }
             };
-            IssueOutcome outcome = method == CouponIssueStrategy.REDIS_EVENT ? IssueOutcome.ACCEPTED : IssueOutcome.SUCCESS;
+            IssueOutcome outcome = confirmation != null ? IssueOutcome.ACCEPTED : IssueOutcome.SUCCESS;
             log.complete(arrival, memberId, outcome, System.nanoTime() - startedAt, attempts[0]);
+            if (confirmation != null) {
+                // DB 확정 결과는 풀 스레드에서 따로 기록한다. 202 응답은 이것을 기다리지 않는다.
+                confirmation.whenComplete((r, e) -> log.finishAsync(arrival, memberId,
+                        e == null ? IssueOutcome.SUCCESS : IssueOutcome.of(e), System.nanoTime() - startedAt));
+            }
             return response;
         } catch (RuntimeException e) {
             log.complete(arrival, memberId, IssueOutcome.of(e), System.nanoTime() - startedAt, attempts[0]);
@@ -142,7 +155,14 @@ public class LabService {
         }
     }
 
+    // 요청 기록을 DB 보다 먼저 읽는다. 그래야 확정 결과에 SUCCESS 로 센 요청은 아래 DB 조회에 반드시 보인다(pending 0 이면 모두).
+    // DB 조회 둘은 읽기 트랜잭션 하나(REPEATABLE READ 스냅숏)에서 읽어, 그 사이 커밋으로 issued_count 와 행 수가 어긋나 보이지 않게 한다.
+    @Transactional(readOnly = true)
     public LabResult result(Long couponId) {
+        IssueRequestLog log = logs.getOrDefault(couponId, new IssueRequestLog(Map.of()));
+        Map<IssueOutcome, Long> asyncResults = log.asyncOutcomes();
+        long pending = log.pending();
+
         Map<String, Object> coupon = jdbcTemplate.queryForList(
                         "SELECT total_count, issued_count FROM coupons WHERE coupon_id = ?", couponId)
                 .stream().findFirst()
@@ -156,7 +176,6 @@ public class LabService {
 
         Set<Long> redisMembers = couponIssuedRedisRepository.members(couponId);
 
-        IssueRequestLog log = logs.getOrDefault(couponId, new IssueRequestLog(Map.of()));
         IssueRequestLog.Ordering ordering = log.ordering(winners, totalCount);
 
         Checks checks = new Checks(
@@ -176,6 +195,9 @@ public class LabService {
                 ordering,
                 log.latencyMs(false),
                 log.latencyMs(true),
+                asyncResults,
+                pending,
+                log.confirmLatencyMs(),
                 log.attempts(),
                 delta(log.lockMetricsAtStart(), readLockMetrics())
         );
