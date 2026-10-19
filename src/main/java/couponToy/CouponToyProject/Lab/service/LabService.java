@@ -8,9 +8,10 @@ import couponToy.CouponToyProject.CouponIssue.repository.CouponIssuedRedisReposi
 import couponToy.CouponToyProject.CouponIssue.service.CouponIssueStrategy;
 import couponToy.CouponToyProject.CouponIssue.service.EventIssueCouponService;
 import couponToy.CouponToyProject.CouponIssue.service.IsolationIssueCouponService;
-import couponToy.CouponToyProject.CouponIssue.service.IssueCouponService;
 import couponToy.CouponToyProject.CouponIssue.service.OptimisticIssueCouponService;
 import couponToy.CouponToyProject.CouponIssue.service.PessimisticIssueCouponService;
+import couponToy.CouponToyProject.CouponIssue.service.RedisIssueCouponService;
+import couponToy.CouponToyProject.CouponIssue.service.RedisIssueCouponService.ReservationMethod;
 import couponToy.CouponToyProject.global.constant.ErrorCode;
 import couponToy.CouponToyProject.global.exception.CouponNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -45,7 +46,7 @@ public class LabService {
     private final IsolationIssueCouponService isolationIssueCouponService;
     private final PessimisticIssueCouponService pessimisticIssueCouponService;
     private final OptimisticIssueCouponService optimisticIssueCouponService;
-    private final IssueCouponService issueCouponService;
+    private final RedisIssueCouponService redisIssueCouponService;
     private final EventIssueCouponService eventIssueCouponService;
     private final CouponIssuedRedisRepository couponIssuedRedisRepository;
     private final JdbcTemplate jdbcTemplate;
@@ -71,6 +72,8 @@ public class LabService {
             long issueRows,                       // coupon_issues 행 수
             long distinctMembers,
             long redisIssuedCount,                // SCARD coupon:issued:{id}. Redis 방식에서만 의미가 있다.
+            long redisOnlyMembers,                // Redis 에 예약은 있는데 DB 발급 행이 없는 회원 수
+            long dbOnlyMembers,                   // DB 에 발급 행은 있는데 Redis 예약이 없는 회원 수
             Checks checks,
             Map<IssueOutcome, Long> requests,     // 진입점에서 관찰한 요청 결과
             IssueRequestLog.Ordering ordering,
@@ -124,7 +127,10 @@ public class LabService {
                 case PESSIMISTIC -> pessimisticIssueCouponService.issueCoupon(memberId, couponId);
                 case OPTIMISTIC -> optimisticIssueCouponService.issue(memberId, couponId);
                 case OPTIMISTIC_RETRY -> optimisticIssueCouponService.issueWithRetry(memberId, couponId, n -> attempts[0] = n);
-                case REDIS_TRANSACTIONAL -> issueCouponService.issueCoupon(memberId, couponId);
+                case REDIS_SET_ONLY -> redisIssueCouponService.issue(memberId, couponId, ReservationMethod.SET_ONLY, n -> attempts[0] = n);
+                case REDIS_MULTI_EXEC -> redisIssueCouponService.issue(memberId, couponId, ReservationMethod.MULTI_EXEC, n -> attempts[0] = n);
+                case REDIS_WATCH -> redisIssueCouponService.issue(memberId, couponId, ReservationMethod.WATCH, n -> attempts[0] = n);
+                case REDIS_LUA -> redisIssueCouponService.issue(memberId, couponId, ReservationMethod.LUA, n -> attempts[0] = n);
                 case REDIS_EVENT -> eventIssueCouponService.issueCoupon(memberId, couponId);
             };
             IssueOutcome outcome = method == CouponIssueStrategy.REDIS_EVENT ? IssueOutcome.ACCEPTED : IssueOutcome.SUCCESS;
@@ -148,6 +154,8 @@ public class LabService {
                 "SELECT member_id FROM coupon_issues WHERE coupon_id = ?", Long.class, couponId);
         long distinctMembers = winners.stream().distinct().count();
 
+        Set<Long> redisMembers = couponIssuedRedisRepository.members(couponId);
+
         IssueRequestLog log = logs.getOrDefault(couponId, new IssueRequestLog(Map.of()));
         IssueRequestLog.Ordering ordering = log.ordering(winners, totalCount);
 
@@ -161,6 +169,8 @@ public class LabService {
         return new LabResult(
                 couponId, totalCount, issuedCount, winners.size(), distinctMembers,
                 couponIssuedRedisRepository.issuedCount(couponId),
+                redisMembers.stream().filter(m -> !winners.contains(m)).count(),
+                winners.stream().filter(m -> !redisMembers.contains(m)).distinct().count(),
                 checks,
                 log.countByOutcome(),
                 ordering,

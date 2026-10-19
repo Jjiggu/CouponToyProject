@@ -12,7 +12,10 @@ public enum CouponIssueStrategy {
     PESSIMISTIC("pessimistic"),
     OPTIMISTIC("optimistic"),
     OPTIMISTIC_RETRY("optimistic_retry"),
-    REDIS_TRANSACTIONAL("redis_transactional"),
+    REDIS_SET_ONLY("redis_set_only"),
+    REDIS_MULTI_EXEC("redis_multi_exec"),
+    REDIS_WATCH("redis_watch"),
+    REDIS_LUA("redis_lua"),
     REDIS_EVENT("redis_event");
 
     private final String tag;

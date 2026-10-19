@@ -10,10 +10,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 class RedisIssueCouponServiceTest extends AbstractCouponIssueStrategyIntegrationTest {
 
     @Autowired
-    private IssueCouponService issueCouponService;
+    private RedisIssueCouponService redisIssueCouponService;
 
     @Override
     protected IssueCouponResponse issue(Member member, Long couponId) {
-        return issueCouponService.issueCoupon(member.getMemberId(), couponId);
+        return redisIssueCouponService.issue(member.getMemberId(), couponId, RedisIssueCouponService.ReservationMethod.LUA, attempt -> {
+        });
     }
 }

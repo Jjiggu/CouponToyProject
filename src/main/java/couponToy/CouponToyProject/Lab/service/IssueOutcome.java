@@ -1,6 +1,7 @@
 package couponToy.CouponToyProject.Lab.service;
 
 import couponToy.CouponToyProject.global.exception.CouponNotFoundException;
+import couponToy.CouponToyProject.global.exception.CouponSoldOutAtDbException;
 import couponToy.CouponToyProject.global.exception.CouponSoldOutException;
 import couponToy.CouponToyProject.global.exception.IsAlreadyIssued;
 import couponToy.CouponToyProject.global.exception.MemberNotFoundException;
@@ -18,6 +19,7 @@ public enum IssueOutcome {
     SUCCESS,            // DB 커밋까지 끝난 발급
     ACCEPTED,           // 접수만 됨 (비동기). 발급 완료가 아니다.
     SOLD_OUT,
+    SOLD_OUT_AT_DB,     // Redis 예약은 통과했지만 DB 조건부 UPDATE 가 막은 품절 (Redis 와 DB 가 어긋남)
     DUPLICATE,          // 애플리케이션 중복 확인이 막음
     UNIQUE_VIOLATION,   // 애플리케이션 확인은 통과했지만 DB UNIQUE 제약이 막음
     DEADLOCK,           // MySQL 1213: 데드락 희생자로 롤백
@@ -30,6 +32,7 @@ public enum IssueOutcome {
     private static final int MYSQL_LOCK_WAIT_TIMEOUT = 1205;
 
     public static IssueOutcome of(Throwable e) {
+        if (e instanceof CouponSoldOutAtDbException) return SOLD_OUT_AT_DB;
         if (e instanceof CouponSoldOutException) return SOLD_OUT;
         if (e instanceof IsAlreadyIssued) return DUPLICATE;
         if (e instanceof CouponNotFoundException || e instanceof MemberNotFoundException) return NOT_FOUND;
