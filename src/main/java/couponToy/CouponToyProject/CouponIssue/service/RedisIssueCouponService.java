@@ -59,8 +59,8 @@ public class RedisIssueCouponService {
     }
 
     /**
-     * 4단계: 같은 확정·보상을 couponIssueExecutor 스레드에서 실행한다. 다른 빈이 호출해야 @Async 프록시를 지난다.
-     * 호출하면 작업을 풀 큐에 넣고 바로 돌아온다. 큐가 가득 차면 넣지 못하고 호출한 스레드에서 TaskRejectedException.
+     * 4단계: 같은 확정·보상을 스레드 풀 couponIssueExecutor 의 작업 스레드에서 실행한다. 다른 빈이 호출해야 @Async 프록시를 지난다.
+     * 호출하면 작업을 스레드 풀 큐에 넣고 바로 돌아온다. 큐가 가득 차면 넣지 못하고 호출한 스레드에서 TaskRejectedException.
      * 반환한 future 는 커밋되면 응답으로, 실패하면 그 예외로 끝난다.
      */
     @Async("couponIssueExecutor")

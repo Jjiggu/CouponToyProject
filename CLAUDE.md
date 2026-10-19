@@ -83,7 +83,7 @@ AsyncIssueCouponService.issue(memberId, couponId)        ← 요청 스레드
   [1] RedisIssueCouponService.reserve(LUA)                3단계와 같은 예약
   [2] RedisIssueCouponService.confirmLater()  @Async     couponIssueExecutor 큐에 넣고 바로 반환 → HTTP 202 (접수)
         큐가 가득 차면 TaskRejectedException → SREM, HTTP 503
-couponIssueExecutor 스레드 (기본 4개, 큐 50000, JVM 메모리)
+작업 스레드 (스레드 풀 couponIssueExecutor: 기본 4개, 큐 50000, JVM 메모리)
   [3] IssueConfirmService.confirm(), 실패 시 SREM          3단계와 같은 확정·보상
 결과 API: asyncResults(접수된 요청의 확정 결과), pending(접수됐지만 확정 결과가 아직 없는 요청)
 ```
@@ -98,7 +98,7 @@ couponIssueExecutor 스레드 (기본 4개, 큐 50000, JVM 메모리)
 - **Redis 예약**: 명령 하나는 원자적이지만 명령 사이에는 다른 요청이 끼어든다. 판단과 예약을 한 번에 하려면 Lua(또는 WATCH)를 쓴다. MULTI/EXEC 는 묶어 실행할 뿐 결과로 분기하지 못해 SREM 으로 되돌린다
 - **DB 조건부 UPDATE + UNIQUE**: Redis 통과 후 DB 수준에서 최종 수량·중복 검증. Redis 와 MySQL 은 한 트랜잭션이 아니다
 - **보상 SREM**: DB 확정 실패 시 예약을 되돌린다. 예약 뒤 프로세스가 죽으면 예약만 남는다(4~6단계 주제)
-- **비동기 확정 (4단계)**: 접수(202)는 발급 완료가 아니다. 확정 작업은 JVM 메모리 큐에 있으므로 프로세스가 죽으면 예약만 남는다. `@Async` 는 다른 빈에서 호출해야 프록시를 지나고, 풀 스레드에는 요청 스레드의 트랜잭션이 없다
+- **비동기 확정 (4단계)**: 접수(202)는 발급 완료가 아니다. 확정 작업은 JVM 메모리 큐에 있으므로 프로세스가 죽으면 예약만 남는다. `@Async` 는 다른 빈에서 호출해야 프록시를 지나고, 작업 스레드(스레드 풀 안에서 확정을 실행하는 스레드)에는 요청 스레드의 트랜잭션이 없다
 - **실패 지점**: `global/failure/FailurePoints` — 테스트가 회원 단위로 멈춤·실패·종료 흉내를 건다. `LAB_HALT_AT=<지점>` 이면 그 지점에서 JVM 을 즉시 종료한다
 
 ### Global Infrastructure (`global` 패키지)

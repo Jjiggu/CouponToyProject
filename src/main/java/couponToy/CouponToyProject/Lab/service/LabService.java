@@ -144,7 +144,7 @@ public class LabService {
             IssueOutcome outcome = confirmation != null ? IssueOutcome.ACCEPTED : IssueOutcome.SUCCESS;
             log.complete(arrival, memberId, outcome, System.nanoTime() - startedAt, attempts[0]);
             if (confirmation != null) {
-                // DB 확정 결과는 풀 스레드에서 따로 기록한다. 202 응답은 이것을 기다리지 않는다.
+                // DB 확정 결과는 작업 스레드에서 따로 기록한다. 202 응답은 이것을 기다리지 않는다.
                 confirmation.whenComplete((r, e) -> log.finishAsync(arrival, memberId,
                         e == null ? IssueOutcome.SUCCESS : IssueOutcome.of(e), System.nanoTime() - startedAt));
             }

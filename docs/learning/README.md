@@ -104,7 +104,7 @@ API (`local` 프로필에서만 등록, 인증 없음)
 | `CouponIssuedRedisRepository` | 예약 방식 4가지(SET 명령만, MULTI/EXEC, WATCH, Lua), 회원 목록 조회 |
 | `FailurePoints` | 장애 실험용 실패 지점 (신규). 평소에는 아무 일도 하지 않음 |
 | `RedisReservationTest` | 3단계 끼어들기, SREM 전 틈, 예약 후 실패·종료, 보상 경합, 동시 요청 비교 |
-| `EventIssueCouponService` → `AsyncIssueCouponService`, `AsyncConfig` | 4단계에서 다시 작성. 이벤트·리스너 대신 `@Async` 메서드 하나(`RedisIssueCouponService.confirmLater`), 스레드 수·큐 용량 설정 (4단계 문서 2절) |
+| `EventIssueCouponService` → `AsyncIssueCouponService`, `AsyncConfig` | 4단계에서 다시 작성. 이벤트·리스너 대신 `@Async` 메서드 하나(`RedisIssueCouponService.confirmLater`), 작업 스레드 수·큐 용량 설정 (4단계 문서 2절) |
 | `RedisIssueCouponService` | 예약(`reserve`)과 확정·보상(`confirmOrCancel`)을 나눠 4단계가 같은 코드를 쓰게 함. 3단계 동작은 같다 |
 | `IssueRequestLog`, `LabService.result` | 비동기 확정 결과·미완료·진입 → 커밋 시간. 요청 기록을 DB 보다 먼저 읽고 DB 는 읽기 트랜잭션 하나에서 읽는다 |
 | `GlobalControllerAdvice`, `ErrorCode`, `IssueOutcome` | 비동기 큐 포화(`TaskRejectedException`) 503, `REJECTED` |

@@ -33,8 +33,8 @@ import static org.awaitility.Awaitility.await;
 
 /**
  * 4단계: Redis 예약(3단계 Lua)은 요청 스레드에서, DB 확정(같은 IssueConfirmService)은 @Async 스레드 풀에서 한다.
- * 요청은 풀 큐에 작업을 넣으면 바로 돌아온다(접수, HTTP 202). 실행 결과는 build/lab/stage4-async.md 에 쌓인다.
- * 큐 포화를 재현하려고 큐 용량을 50 으로 줄였다(앱 기본 50000). 스레드는 기본 4개.
+ * 요청 스레드는 스레드 풀 큐에 작업을 넣으면 바로 돌아온다(접수, HTTP 202). 실행 결과는 build/lab/stage4-async.md 에 쌓인다.
+ * 큐 포화를 재현하려고 큐 용량을 50 으로 줄였다(앱 기본 50000). 작업 스레드(coupon-issue-async-N)는 기본 4개.
  */
 @SpringBootTest(properties = "coupon.issue.async.queue-capacity=" + AsyncIssueTest.QUEUE_CAPACITY)
 class AsyncIssueTest extends ConcurrencyExperimentSupport {
@@ -123,7 +123,7 @@ class AsyncIssueTest extends ConcurrencyExperimentSupport {
         assertThat(first).isEqualTo("ACCEPTED");
         assertThat(failed.asyncResults()).isEqualTo(Map.of(ERROR, 1L));
         assertThat(failed.issueRows()).isZero();
-        assertThat(redisRepository.members(couponId)).isEmpty(); // 풀 스레드에서 보상 SREM
+        assertThat(redisRepository.members(couponId)).isEmpty(); // 작업 스레드에서 보상 SREM
 
         String retry = issue(couponId, a);
         LabResult done = awaitConfirmed(couponId);
@@ -160,11 +160,11 @@ class AsyncIssueTest extends ConcurrencyExperimentSupport {
         assertThat(done.issueRows()).isEqualTo(full.accepted() + 1);
 
         append("""
-                ## 큐 포화: AbortPolicy (기본값, 스레드 %d, 큐 %d, 재고 1000)
+                ## 큐 포화: AbortPolicy (기본값, 작업 스레드 %d, 큐 %d, 재고 1000)
 
-                - 스레드 %d개를 DB 확정 직전에 멈추고 %d건을 더 보냄 → 큐 %d건
+                - 작업 스레드 %d개를 DB 확정 직전에 멈추고 %d건을 더 보냄 → 큐 %d건
                 - 다음 요청: %s (HTTP 503), 직후 Redis 예약 %d건 (거부된 회원 없음)
-                - 멈춘 스레드를 놓아준 뒤: 요청 결과 %s, 확정 결과 %s
+                - 멈춘 작업 스레드를 놓아준 뒤: 요청 결과 %s, 확정 결과 %s
                 - 거부된 회원 재요청: %s → DB 발급 행 %d
 
                 """.formatted(full.threads(), full.capacity(), full.threads(), full.capacity(), full.queued(), overflow, reservedAfterReject,
@@ -194,10 +194,10 @@ class AsyncIssueTest extends ConcurrencyExperimentSupport {
             assertThat(done.issueRows()).isEqualTo(full.accepted() + 1);
 
             append("""
-                    ## 큐 포화: CallerRunsPolicy (스레드 %d, 큐 %d)
+                    ## 큐 포화: CallerRunsPolicy (작업 스레드 %d, 큐 %d)
 
                     - 넘친 요청: %s, DB 확정을 `%s` 스레드(요청 스레드)가 직접 실행, 응답까지 %d ms, 응답 직후 DB 발급 행 있음 %s
-                    - 앞서 큐에 있던 작업은 아직 멈춰 있는데 넘친 요청이 먼저 커밋됐다. 멈춘 스레드를 놓아준 뒤 DB 발급 행 %d
+                    - 앞서 큐에 있던 작업은 아직 멈춰 있는데 넘친 요청이 먼저 커밋됐다. 멈춘 작업 스레드를 놓아준 뒤 DB 발급 행 %d
 
                     """.formatted(full.threads(), full.capacity(), overflow, ranOn[0], elapsedMs, rowRightAfter, done.issueRows()));
         } finally {
@@ -224,9 +224,9 @@ class AsyncIssueTest extends ConcurrencyExperimentSupport {
             assertThat(retry).isEqualTo("DUPLICATE");
 
             append("""
-                    ## 큐 포화: DiscardPolicy (스레드 %d, 큐 %d)
+                    ## 큐 포화: DiscardPolicy (작업 스레드 %d, 큐 %d)
 
-                    - 넘친 요청: %s (예외 없음). 풀이 모두 빈 뒤: 확정 결과 %s, 미완료 %d, Redis 에만 있는 회원 %d, 그 회원의 DB 발급 행 없음
+                    - 넘친 요청: %s (예외 없음). 작업 스레드와 큐가 모두 빈 뒤: 확정 결과 %s, 미완료 %d, Redis 에만 있는 회원 %d, 그 회원의 DB 발급 행 없음
                     - 그 회원 재요청: %s
 
                     """.formatted(full.threads(), full.capacity(), overflow, r.asyncResults(), r.pending(), r.redisOnlyMembers(), retry));
@@ -265,7 +265,7 @@ class AsyncIssueTest extends ConcurrencyExperimentSupport {
         }
     }
 
-    // 풀 스레드를 모두 DB 확정 직전에 멈추고 큐를 가득 채운다. overflow 는 아직 보내지 않은 다음 회원
+    // 작업 스레드를 모두 DB 확정 직전에 멈추고 큐를 가득 채운다. overflow 는 아직 보내지 않은 다음 회원
     private Saturated saturate() throws Exception {
         int threads = executor.getCorePoolSize();
         int capacity = executor.getQueueCapacity();
@@ -306,7 +306,7 @@ class AsyncIssueTest extends ConcurrencyExperimentSupport {
     private void reportAsyncBurst(String scenario, int round, int requestCount, Burst accepted, LabResult r) {
         if (round == 1) {
             append("\n## 동시 요청: REDIS_ASYNC, " + scenario + " (재고 " + r.totalCount() + ", 요청 " + requestCount
-                    + ", 스레드 " + requestCount + ", 풀 스레드 " + executor.getCorePoolSize() + ", 큐 " + executor.getQueueCapacity() + ")\n\n"
+                    + ", 요청 스레드 " + requestCount + ", 작업 스레드 " + executor.getCorePoolSize() + ", 큐 " + executor.getQueueCapacity() + ")\n\n"
                     + "| 회차 | 접수 결과 | 확정 결과 | 마지막 접수 반환 시점 미완료 | 발급 행 | issued_count | Redis 에만 / DB 에만 | 먼저 온 N명 중 당첨 | 완료 순서 역전 | 접수 p50/p95/p99 ms | 진입→커밋 p50/p95/p99 ms | 접수 총 소요 ms |\n"
                     + "|---:|---|---|---:|---:|---:|---|---:|---:|---|---|---:|\n");
         }

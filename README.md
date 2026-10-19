@@ -87,7 +87,7 @@ AsyncIssueCouponService.issue(memberId, couponId)        ← 요청 스레드
   [1] RedisIssueCouponService.reserve(LUA)                3단계와 같은 예약
   [2] RedisIssueCouponService.confirmLater()  @Async     couponIssueExecutor 큐에 넣고 바로 반환 → HTTP 202 (접수)
         큐가 가득 차면 TaskRejectedException → SREM, HTTP 503
-couponIssueExecutor 스레드 (기본 4개, 큐 50000, JVM 메모리)
+작업 스레드 (스레드 풀 couponIssueExecutor: 기본 4개, 큐 50000, JVM 메모리)
   [3] IssueConfirmService.confirm(), 실패 시 SREM          3단계와 같은 확정·보상
 결과 API: asyncResults(접수된 요청의 확정 결과), pending(접수됐지만 확정 결과가 아직 없는 요청)
 ```

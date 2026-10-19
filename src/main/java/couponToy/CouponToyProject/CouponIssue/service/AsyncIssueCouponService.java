@@ -26,7 +26,7 @@ public class AsyncIssueCouponService {
         try {
             return redisIssueCouponService.confirmLater(memberId, couponId);
         } catch (TaskRejectedException e) {
-            // 풀 큐가 가득 차 작업을 넣지 못했다. 접수하지 않았으므로 예약을 되돌린다.
+            // 스레드 풀 큐가 가득 차 작업을 넣지 못했다. 접수하지 않았으므로 예약을 되돌린다.
             couponIssuedRedisRepository.remove(couponId, memberId);
             throw e;
         }

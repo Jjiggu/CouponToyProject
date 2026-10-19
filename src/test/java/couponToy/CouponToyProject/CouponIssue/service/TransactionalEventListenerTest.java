@@ -109,7 +109,7 @@ class TransactionalEventListenerTest extends AbstractCouponIssueIntegrationTestS
             status.setRollbackOnly();
         });
         assertThat(listeners.calls()).doesNotContainKeys("afterCommit:rollback", "fallback:rollback");
-        // 비동기 리스너는 커밋 시점에 풀로 넘겨진다. 넘겨진 작업 수가 커밋 건 하나뿐이면 롤백 건은 넘겨지지 않은 것이다.
+        // 비동기 리스너는 커밋 시점에 스레드 풀로 넘겨진다. 넘겨진 작업 수가 커밋 건 하나뿐이면 롤백 건은 넘겨지지 않은 것이다.
         assertThat(executor.getThreadPoolExecutor().getTaskCount() - submittedBefore).isEqualTo(1);
     }
 }
