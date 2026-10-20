@@ -28,6 +28,7 @@ SPRING_DATA_REDIS_DATABASE=2 SPRING_JPA_SHOW_SQL=false SPRING_JPA_PROPERTIES_HIB
 | `ITERATIONS`, `VUS` | 시나리오별 | `burst`, `duplicate` 의 총 요청 수와 동시 VU |
 | `DUPLICATE_USERS` | `100` | `duplicate` 에서 요청을 나눠 쓸 회원 수 |
 | `WARMUP` | `0` | 별도 쿠폰에 같은 방식으로 먼저 보낼 요청 수 |
+| `CONFIRM_POLL_MS` | `50` | 비동기 방식에서 확정을 기다리며 결과 API 를 다시 조회하는 간격 |
 | `DUPLICATE_CHECK` | `true` | `false` 면 중복 확인 SELECT 를 건너뛴다. `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE` 에서만 |
 
 ```bash
