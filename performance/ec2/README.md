@@ -1,6 +1,6 @@
 # EC2 에서 측정하기
 
-Mac 에서는 k6·앱·MySQL·Redis 가 한 기계의 CPU 를 나눠 쓰고 다른 프로그램도 함께 돌아, 50 req/s 차이를 가를 수 없었다([최대 발급 TPS, Mac](../../docs/learning/results/2026-10-20-tps-mac.md)). 세 역할을 인스턴스로 나눠 같은 측정을 다시 한다.
+Mac 에서는 k6·앱·MySQL·Redis 가 한 기계의 CPU 를 나눠 쓰고 다른 프로그램도 함께 돌아, 50 req/s 차이를 가를 수 없었다([Mac 측정](../../docs/learning/results/2026-10-20-tps-mac.md)). 세 역할을 인스턴스로 나눠 같은 측정을 다시 한다. 결과와 해석: [08. AWS(EC2)에서 잰 쿠폰 1장 발급 확정 한계](../../docs/learning/08-load-test-ec2.md)
 
 ## 구성
 

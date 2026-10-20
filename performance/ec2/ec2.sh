@@ -1,7 +1,7 @@
 #!/bin/bash
 # EC2 측정. Mac 에서 실행하고, 인스턴스는 SSH 로만 다룬다. 인스턴스 정보는 build/ec2/hosts.env (README 참고)
 #   performance/ec2/ec2.sh setup        패키지 설치, DB 인스턴스에 MySQL·Redis 기동, jar·k6 스크립트 올리기 (코드가 바뀌면 다시)
-#   performance/ec2/ec2.sh tps <이름>    최대 발급 TPS 측정. 결과는 build/ec2/<이름>/
+#   performance/ec2/ec2.sh tps <이름>    쿠폰 1장의 따라간 최대 속도 측정. 결과는 build/ec2/<이름>/
 #     CONFIGS="pessimistic lua async pubsub stream"  ROUNDS=2  RATES="450 500 550 600 650 700"  PESSIMISTIC_RATES="300 350 400 450"  WARM_RATE=200
 set -u
 cd "$(dirname "$0")/../.."

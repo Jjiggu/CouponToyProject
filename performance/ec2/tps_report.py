@@ -1,4 +1,4 @@
-# 최대 발급 TPS 요약. 사용법: python3 performance/ec2/tps_report.py build/ec2/<결과 디렉터리>   (그 안의 runs.txt 의 실행 전부, warm- 제외)
+# 쿠폰 1장의 따라간 최대 속도 요약. 사용법: python3 performance/ec2/tps_report.py build/ec2/<결과 디렉터리>   (그 안의 runs.txt 의 실행 전부, warm- 제외)
 import sys, re, json, os, datetime, bisect, collections
 D = sys.argv[1]
 SYNC = {'pessimistic', 'lua'}
@@ -63,8 +63,8 @@ for cfg, rs in rows.items():
     why = sorted({f for x in by_rate.get(nxt, []) for f in x['fails']}) if nxt else []
     summary.append((LABEL[cfg], best, nxt, why, [round(x['steady']) for x in by_rate.get(nxt, [])]))
 
-print('\n### 최대 발급 TPS (두 회차 모두 조건을 만족한 가장 높은 목표 속도)\n')
-print('| 방식 | 최대 발급 TPS | 다음 속도 | 다음 속도에서 깨진 조건 | 다음 속도의 정상 구간 발급 TPS |')
+print('\n### 따라간 최대 속도 (두 회차 모두 조건을 만족한 가장 높은 목표 속도)\n')
+print('| 방식 | 따라간 최대 속도 | 다음 속도 | 다음 속도에서 깨진 조건 | 다음 속도의 정상 구간 발급 TPS |')
 print('|---|---:|---:|---|---|')
 for label, best, nxt, why, steady in summary:
     print(f"| {label} | {best if best else '-'} | {nxt if nxt else '-'} | {', '.join(why) if why else '-'} | {steady if steady else '-'} |")

@@ -10,7 +10,8 @@
 | 4 | [Spring @Async](04-async.md) | 구현·실행 완료 |
 | 5 | [Redis Pub/Sub](05-pubsub.md) | 구현·실행 완료 |
 | 6 | [Redis Streams](06-streams.md) | 구현·실행 완료 |
-| - | [부하 테스트: 일정한 속도로 보낼 때](07-load-test.md) | 실행 완료 |
+| - | [부하 테스트: 일정한 속도로 보낼 때 (Mac)](07-load-test.md) | 실행 완료 |
+| - | [AWS(EC2)에서 잰 쿠폰 1장 발급 확정 한계](08-load-test-ec2.md) | 실행 완료 |
 
 ## 공통 검증 기준
 
