@@ -2,7 +2,7 @@
 # EC2 측정. Mac 에서 실행하고, 인스턴스는 SSH 로만 다룬다. 인스턴스 정보는 build/ec2/hosts.env (README 참고)
 #   performance/ec2/ec2.sh setup        패키지 설치, DB 인스턴스에 MySQL·Redis 기동, jar·k6 스크립트 올리기 (코드가 바뀌면 다시)
 #   performance/ec2/ec2.sh tps <이름>    최대 발급 TPS 측정. 결과는 build/ec2/<이름>/
-#     CONFIGS="pessimistic lua async pubsub stream"  ROUNDS=2  RATES="450 500 550 600 650 700"  PESSIMISTIC_RATES="300 350 400 450"
+#     CONFIGS="pessimistic lua async pubsub stream"  ROUNDS=2  RATES="450 500 550 600 650 700"  PESSIMISTIC_RATES="300 350 400 450"  WARM_RATE=200
 set -u
 cd "$(dirname "$0")/../.."
 source build/ec2/hosts.env
@@ -68,7 +68,7 @@ config() { # config <설정> <회차> : 앱을 띄우고 데이터를 비운 뒤
   start_jar $cfg-r$r-pub 18080 local || return 1
   on $APP_PUB "curl -s -X DELETE localhost:18080/lab/data" > /dev/null
   [ -n "$consumer" ] && { start_jar $cfg-r$r-consumer 18081 $consumer || return 1; }
-  run_level warm-$cfg-r$r $method 200
+  run_level warm-$cfg-r$r $method ${WARM_RATE:-200}
   for rate in $rates; do run_level $cfg-$rate-r$r $method $rate; done
   [ -n "$consumer" ] && stop_port 18081
   stop_port 18080

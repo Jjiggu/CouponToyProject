@@ -3,7 +3,7 @@ import sys, re, json, os, datetime, bisect, collections
 D = sys.argv[1]
 SYNC = {'pessimistic', 'lua'}
 LABEL = {'pessimistic': '비관적 락', 'lua': '동기 Lua', 'async': '비동기 (작업 스레드 4)', 'pubsub': 'Pub/Sub (구독자 프로세스 1)', 'stream': 'Stream 한 스크립트 (소비자 프로세스 1)'}
-W0, W1 = 5.0, 30.0  # 측정 시작 뒤 이 구간을 보내기 정상 구간으로 본다
+W0, W1 = 5.0, 28.0  # 측정 시작 뒤 이 구간을 보내기 정상 구간으로 본다. 끝을 보내기가 끝나는 30초에 두면 1초 표본 사이 보간이 멈춘 뒤 값과 섞여 약 1% 낮게 나온다
 
 def interp(points, x):
     xs = [p[0] for p in points]
