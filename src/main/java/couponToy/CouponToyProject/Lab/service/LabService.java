@@ -16,6 +16,7 @@ import couponToy.CouponToyProject.CouponIssue.service.RedisIssueCouponService.Re
 import couponToy.CouponToyProject.CouponIssue.service.StreamIssueCouponService;
 import couponToy.CouponToyProject.global.constant.ErrorCode;
 import couponToy.CouponToyProject.global.exception.CouponNotFoundException;
+import couponToy.CouponToyProject.WriteBehind.service.WriteBehindIssueService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Profile;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -53,6 +54,7 @@ public class LabService {
     private final AsyncIssueCouponService asyncIssueCouponService;
     private final PubSubIssueCouponService pubSubIssueCouponService;
     private final StreamIssueCouponService streamIssueCouponService;
+    private final WriteBehindIssueService writeBehindIssueService;
     private final CouponIssuedRedisRepository couponIssuedRedisRepository;
     private final JdbcTemplate jdbcTemplate;
     private final StringRedisTemplate redisTemplate;
@@ -159,6 +161,11 @@ public class LabService {
                 }
                 case REDIS_STREAM_ATOMIC -> {
                     streamIssueCouponService.issueAtomically(memberId, couponId);
+                    handedOff = IssueOutcome.QUEUED;
+                    yield IssueCouponResponse.builder().memberId(memberId).couponId(couponId).build();
+                }
+                case REDIS_WRITE_BEHIND -> {
+                    writeBehindIssueService.issue(memberId, couponId);
                     handedOff = IssueOutcome.QUEUED;
                     yield IssueCouponResponse.builder().memberId(memberId).couponId(couponId).build();
                 }

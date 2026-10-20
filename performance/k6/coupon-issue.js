@@ -16,7 +16,7 @@ const duplicateCheck = (__ENV.DUPLICATE_CHECK || 'true') !== 'false';
 
 // 202 는 접수일 뿐 발급 완료가 아니다.
 // 202: 비동기 방식(넘기기만 하고 확정은 나중)
-const handedOff = ['REDIS_PUBSUB', 'REDIS_STREAM', 'REDIS_STREAM_ATOMIC'].includes(method);
+const handedOff = ['REDIS_PUBSUB', 'REDIS_STREAM', 'REDIS_STREAM_ATOMIC', 'REDIS_WRITE_BEHIND'].includes(method);
 const expectedSuccessStatus = method === 'REDIS_ASYNC' || handedOff ? 202 : 201;
 // 409: 거절(품절, 중복), 503: 트랜잭션 실패(데드락, 락 대기 초과) 또는 비동기 큐 포화
 const expectedStatuses = new Set([expectedSuccessStatus, 409, 503]);

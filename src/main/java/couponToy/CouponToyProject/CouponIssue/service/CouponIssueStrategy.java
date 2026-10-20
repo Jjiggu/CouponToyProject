@@ -14,5 +14,6 @@ public enum CouponIssueStrategy {
     REDIS_ASYNC,
     REDIS_PUBSUB,
     REDIS_STREAM,
-    REDIS_STREAM_ATOMIC
+    REDIS_STREAM_ATOMIC,
+    REDIS_WRITE_BEHIND
 }

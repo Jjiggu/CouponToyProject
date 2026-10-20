@@ -28,7 +28,8 @@ import java.util.Set;
 public class LabController {
 
     private static final Set<CouponIssueStrategy> ASYNC_METHODS = EnumSet.of(
-            CouponIssueStrategy.REDIS_ASYNC, CouponIssueStrategy.REDIS_PUBSUB, CouponIssueStrategy.REDIS_STREAM, CouponIssueStrategy.REDIS_STREAM_ATOMIC);
+            CouponIssueStrategy.REDIS_ASYNC, CouponIssueStrategy.REDIS_PUBSUB, CouponIssueStrategy.REDIS_STREAM, CouponIssueStrategy.REDIS_STREAM_ATOMIC,
+            CouponIssueStrategy.REDIS_WRITE_BEHIND);
 
     private final LabService labService;
 
