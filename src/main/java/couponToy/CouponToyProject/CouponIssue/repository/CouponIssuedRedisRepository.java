@@ -43,6 +43,13 @@ public class CouponIssuedRedisRepository {
 
     // 6단계 최소 개선: 위와 같은 판단 뒤, 예약과 스트림 등록(XADD)을 한 실행 안에서 한다.
     // Lua 는 실행 중 오류가 나도 앞서 실행한 명령을 되돌리지 않는다. 그래서 실패할 수 있는 XADD 를 SADD 보다 먼저 둔다.
+    // 9단계 write-behind 도 같은 스크립트를 스트림 키만 바꿔(coupon:wb:stream) 쓴다.
+    // KEYS[1] = coupon:issued:{couponId}, KEYS[2] = 스트림 키, ARGV[1] = memberId, ARGV[2] = totalCount, ARGV[3] = couponId
+    // XADD 스트림 * memberId {m} couponId {c}: 스트림 끝에 메시지 하나를 붙인다.
+    //   '*' 는 ID 를 Redis 가 정하라는 뜻이다. "밀리초 시각-순번"(예: 1761123456789-0) 형태로, 붙일 때마다 커진다.
+    //   메시지 내용은 필드-값 쌍이다(여기서는 memberId, couponId 두 개). 스트림 키가 없으면 XADD 가 만든다.
+    //   읽어 가도 지워지지 않는다. List 의 POP(꺼내면 사라짐)이나 저장하지 않는 Pub/Sub(5단계)와 다른 점이다.
+    // 판단부터 SADD 까지 한 스크립트라 그 사이에 다른 요청이 끼지 않고, "예약은 됐는데 적재 요청이 없는" 상태가 생기지 않는다.
     private static final DefaultRedisScript<Long> RESERVE_AND_ENQUEUE_SCRIPT = new DefaultRedisScript<>("""
             if redis.call('SISMEMBER', KEYS[1], ARGV[1]) == 1 then
               return 1

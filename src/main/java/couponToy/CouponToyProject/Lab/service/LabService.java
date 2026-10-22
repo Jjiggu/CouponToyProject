@@ -165,6 +165,7 @@ public class LabService {
                     yield IssueCouponResponse.builder().memberId(memberId).couponId(couponId).build();
                 }
                 case REDIS_WRITE_BEHIND -> {
+                    // Redis 에 예약과 적재 요청만 남기고 돌아온다. DB 행은 적재기(wb-loader)가 나중에 넣는다
                     writeBehindIssueService.issue(memberId, couponId);
                     handedOff = IssueOutcome.QUEUED;
                     yield IssueCouponResponse.builder().memberId(memberId).couponId(couponId).build();

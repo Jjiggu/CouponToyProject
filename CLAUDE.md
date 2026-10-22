@@ -121,6 +121,7 @@ AsyncIssueCouponService.issue(memberId, couponId)        ← 요청 스레드
 ```
 요청 (local)          회원 존재 확인 → EVALSHA: 중복 → 재고 → XADD coupon:wb:stream → SADD  → 202 (QUEUED). DB 에 쓰지 않는다
 적재기 (wb-loader)    XREADGROUP (자기 pending 먼저) COUNT 100 → 한 트랜잭션에 INSERT ... ON DUPLICATE KEY (쿠폰 행 갱신 없음) → 커밋 뒤 XACK
+                      묶음 실패 시 한 건씩 다시. 전달 3회 초과는 coupon:wb:stream:dead 에 남기고 XACK (예약은 그대로, 대사가 채움)
 대사 (API)            DB 먼저 읽고 Redis 명단과 비교 → Redis 에만 있는 회원 INSERT, issued_count = COUNT(*)
 Redis 가 기준이라 DB 의 조건부 UPDATE 방어가 없다. Redis 가 기록을 잃으면(영속화 끔 + 재시작) 초과 발급을 막지 못한다
 ```
@@ -133,6 +134,7 @@ Redis 가 기준이라 DB 의 조건부 UPDATE 방어가 없다. Redis 가 기�
 | `coupon:issue:stream` | Stream | 6단계 확정 요청. 그룹 `coupon-issuers`. ACK 해도 지워지지 않고 자르지 않는다 |
 | `coupon:issue:stream:dead` | Stream | 6단계 전달 횟수 상한을 넘긴 메시지 |
 | `coupon:wb:stream` | Stream | 9단계 적재 요청. 그룹 `coupon-wb-loaders`, 소비자 이름 `loader` 하나 |
+| `coupon:wb:stream:dead` | Stream | 9단계 전달 횟수 상한을 넘겨 적재를 포기한 메시지 (원래 필드, originalId, deliveries, error) |
 
 ### Concurrency Strategy
 - **Redis 예약**: 명령 하나는 원자적이지만 명령 사이에는 다른 요청이 끼어든다. 판단과 예약을 한 번에 하려면 Lua(또는 WATCH)를 쓴다. MULTI/EXEC 는 묶어 실행할 뿐 결과로 분기하지 못해 SREM 으로 되돌린다

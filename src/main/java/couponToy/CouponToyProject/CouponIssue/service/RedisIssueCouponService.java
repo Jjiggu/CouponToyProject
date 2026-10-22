@@ -54,6 +54,7 @@ public class RedisIssueCouponService {
     }
 
     // 6단계 최소 개선: Lua 예약과 같은 판단이지만, 예약하면서 같은 스크립트 안에서 스트림에 확정 요청을 넣는다
+    // 9단계 write-behind 도 이것을 쓴다(스트림 키 coupon:wb:stream). 9단계 소비자는 확정 대신 INSERT 만 한다
     public void reserveAndEnqueue(Long memberId, Long couponId, String streamKey) {
         reject(couponIssuedRedisRepository.reserveAndEnqueueWithLua(couponId, memberId, totalCount(couponId), streamKey));
     }
