@@ -1,6 +1,6 @@
 # 9단계: write-behind (Redis 를 기준으로, DB 는 나중에 채운다)
 
-실행 원본: [JUnit](results/2026-10-20-stage9-junit.md), [장애 실험](results/2026-10-20-stage9-loss.md), [EC2 측정](results/2026-10-21-stage9-ec2.md)
+실행 원본: [JUnit](results/2026-10-20-stage9-junit.md), [JUnit, 따로 보관 추가 뒤](results/2026-10-22-stage9-junit.md), [장애 실험](results/2026-10-20-stage9-loss.md), [EC2 측정](results/2026-10-21-stage9-ec2.md)
 
 ## 1. 질문과 예상
 
@@ -36,6 +36,8 @@
   BEGIN; INSERT INTO coupon_issues ... VALUES (..),(..),... ON DUPLICATE KEY UPDATE member_id = member_id; COMMIT
   XACK
   (읽을 것이 없으면 20ms 쉰다. 실패하면 ACK 하지 않고 1초 뒤 다시)
+  묶음이 실패하면: 한 건씩 다시 INSERT → 넣은 것은 바로 XACK
+                   실패한 것은 XPENDING 전달 횟수 > 3 이면 XADD coupon:wb:stream:dead + XACK, 아니면 pending 에 남김
 
 대사   WriteBehindLoader.reconcile()
   SELECT member_id FROM coupon_issues (DB 먼저) → SMEMBERS coupon:issued:{id}
@@ -43,6 +45,8 @@
 ```
 
 - 같은 메시지를 다시 처리하거나 대사와 겹쳐도 이미 있는 (쿠폰, 회원) 행은 바뀌지 않는다(UNIQUE)
+- 따로 보관(dead letter)은 6단계와 다르게 예약을 되돌리지 않는다. 6단계는 DB 가 기준이라 적재를 포기하면 예약도 지웠다(SREM). 9단계는 Redis 가 기준이라 그 회원은 이미 발급된 것이고 DB 로 옮기는 일만 실패한 것이다. 명단에 남아 있으므로 대사가 나중에 넣는다
+- 처음에는 전달 횟수 상한이 없었다. 계속 실패하는 메시지가 하나 있으면 적재기가 pending 을 먼저 읽느라 그 묶음만 반복하고, 뒤에 쌓인 메시지는 적재되지 못했다. 한 건씩 다시 넣기와 따로 보관을 더해, 문제없는 메시지는 바로 넣고 문제 메시지는 약 3초(상한 3 × 재시도 간격 1초) 뒤 비켜나게 했다
 - 대사는 DB 를 먼저 읽는다. Lua 가 SADD 와 XADD 를 한 번에 하므로 DB 에 들어온 회원은 그 전에 Redis 에 있었다. 그래서 요청이 계속 들어오는 중에도 "DB 에만 있는 회원" 은 Redis 가 기록을 잃은 경우뿐이다
 - 기존 코드는 바꾸지 않았다. 9단계 코드는 `WriteBehind` 패키지에 있고, 실험 API 에 연결하려고 방식 이름(`REDIS_WRITE_BEHIND`), `LabService` 분기, 202 응답 목록에 한 줄씩 등록했다
 
@@ -70,6 +74,11 @@ curl -X POST localhost:18080/lab/write-behind/coupons/{id}/reconcile
 **커밋 뒤 ACK 전 종료 (JUnit)**: pending 3건을 다시 적재해도 행은 3개 그대로였다.
 
 **적재 요청 기록만 잃은 경우 (JUnit)**: 스트림을 비우자 적재기는 0건. 대사가 Redis 명단으로 5건을 채웠다.
+
+**계속 실패하는 메시지 (JUnit, 재고 3, 테스트용 트리거로 DB 가 B 의 INSERT 만 거절)**
+- 첫 적재: 묶음이 실패해 한 건씩 다시 넣었고, A·C 는 바로 들어갔다(DB 2행). B 만 pending 에 남았다
+- B 를 세 번 받고 실패한 뒤, 네 번째에 `coupon:wb:stream:dead` 로 옮겼다(회원 번호, 전달 횟수 4, 오류 SQL state 45000, 원래 메시지 ID). pending 0
+- Redis 명단에는 B 가 그대로 남았다(Redis 에만 있는 회원 1). 거절을 풀고 대사하자 B 가 DB 에 들어가 3행, `issued_count` 3
 
 **판매 중 장애 (Mac, 재고 1000, 회원 3000명이 한 번씩 초당 200건 15초, 예약 300명쯤에서 죽임)**
 
@@ -128,6 +137,8 @@ curl -X POST localhost:18080/lab/write-behind/coupons/{id}/reconcile
 - `issued_count` 는 대사 전까지 실제와 다르다. 화면이나 다른 기능이 이 값을 읽으면 틀린 값을 본다
 - OS 장애나 전원이 나갔을 때 AOF everysec 가 잃는 범위(최대 1초)는 재현하지 않았다. 잃지 않으려면 `appendfsync always` 가 필요하고, 그러면 Redis 도 쓰기마다 디스크 동기화를 기다린다
 - 적재기는 하나라고 가정했다(소비자 이름 고정). 여럿 띄우려면 이름을 나누고 죽은 쪽 pending 을 가져와야 한다(6단계 XAUTOCLAIM)
+- DB 가 약 3초 넘게 죽어 있으면 그동안 실패한 메시지도 전달 횟수 상한을 넘겨 따로 보관된다. 잃는 것은 아니지만(대사가 채운다), 따로 보관된 메시지를 다시 넣는 기능은 없다. 대사를 불러야 DB 에 들어간다
+- 따로 보관과 ACK 사이에 죽으면 같은 메시지가 두 번 보관될 수 있다
 
 ## 6. 다음에 볼 것
 
