@@ -13,6 +13,7 @@
 | - | [부하 테스트: 일정한 속도로 보낼 때 (Mac)](07-load-test.md) | 실행 완료 |
 | - | [AWS(EC2)에서 잰 쿠폰 1장 발급 확정 한계](08-load-test-ec2.md) | 실행 완료 |
 | 9 | [write-behind: Redis 를 기준으로, DB 는 나중에](09-write-behind.md) | 구현·실행 완료 |
+| 10 | [회원 확인에서 쓸데없는 트랜잭션 설정 문장 없애기](10-no-tx-member-check.md) | 구현·실행 완료 |
 
 ## 공통 검증 기준
 

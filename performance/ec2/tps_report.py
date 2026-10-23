@@ -22,7 +22,11 @@ rows = collections.OrderedDict()
 for name, cid, t0, app_cpu, k6_cpu in runs:
     cfg, rate, rnd = re.match(r'(.+)-(\d+)-(r\d)$', name).groups(); rate = int(rate)
     log = open(os.path.join(D, name + '.log')).read()
-    d = json.loads(re.search(r'msg="lab result \(GET [^)]*\)\\n(.*?)" source=console', log, re.S).group(1).encode().decode('unicode_escape'))
+    found = re.search(r'msg="lab result \(GET [^)]*\)\\n(.*?)" source=console', log, re.S)
+    if not found:  # k6 가 결과 API 까지 가지 못한 측정(준비 단계 실패 등)은 건너뛴다
+        print(f'<!-- {name}: 결과 없음, 건너뜀 -->')
+        continue
+    d = json.loads(found.group(1).encode().decode('unicode_escape'))
     t = re.search(r'발급 완료 처리량=([\d.]+) req/s \(확정까지 ([\d.]+)s, 마지막 응답 시점 미완료 (\d+), 남은 미완료 (\d+)\)', log)
     k = json.load(open(os.path.join(D, name + '.json')))['metrics']
     sent, dropped = k['iterations']['count'], k.get('dropped_iterations', {}).get('count', 0)
