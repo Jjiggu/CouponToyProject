@@ -32,7 +32,7 @@ class LabControllerTest extends AbstractCouponIssueIntegrationTestSupport {
 
     private static final Set<CouponIssueStrategy> HANDED_OFF = EnumSet.of(
             CouponIssueStrategy.REDIS_PUBSUB, CouponIssueStrategy.REDIS_STREAM, CouponIssueStrategy.REDIS_STREAM_ATOMIC,
-            CouponIssueStrategy.REDIS_WRITE_BEHIND);
+            CouponIssueStrategy.REDIS_WRITE_BEHIND, CouponIssueStrategy.REDIS_WRITE_BEHIND_NO_TX);
 
     @Autowired
     private MockMvc mockMvc;

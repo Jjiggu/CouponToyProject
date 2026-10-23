@@ -23,7 +23,7 @@ LAB_CHANGE_MYSQL_GLOBALS=true ./gradlew test --tests "*.IsolationLockSettingsExp
 ```
 
 > 통합 테스트(`@SpringBootTest`)는 MySQL과 Redis가 로컬에서 실행 중이어야 한다. 테스트는 `CouponToyProject_test` DB와 Redis db 1을 쓴다.
-> 단계별 실행 기록은 `build/lab/stage1-isolation.md`, `build/lab/stage1-lock-settings.md`, `build/lab/stage2-lock.md`, `build/lab/stage3-redis.md`, `build/lab/stage4-async.md`, `build/lab/stage5-pubsub.md`, `build/lab/stage6-stream.md`, `build/lab/stage9-write-behind.md` 에 남는다. 학습 단계 문서는 `docs/learning/`.
+> 단계별 실행 기록은 `build/lab/stage1-isolation.md`, `build/lab/stage1-lock-settings.md`, `build/lab/stage2-lock.md`, `build/lab/stage3-redis.md`, `build/lab/stage4-async.md`, `build/lab/stage5-pubsub.md`, `build/lab/stage6-stream.md`, `build/lab/stage9-write-behind.md`, `build/lab/stage10-no-tx.md` 에 남는다. 학습 단계 문서는 `docs/learning/`.
 
 ### Infrastructure (Docker)
 ```bash
@@ -48,6 +48,7 @@ docker build -t docker-coupon .
 - **Coupon** – 쿠폰 엔티티와 생성
 - **CouponIssue** – 쿠폰 발급. 학습 단계별 비교 구현 (`IsolationIssueCouponService`, `PessimisticIssueCouponService`, `OptimisticIssueCouponService`, `RedisIssueCouponService` + `IssueConfirmService`, `AsyncIssueCouponService`, `PubSubIssueCouponService` + `PubSubIssueConsumer`, `StreamIssueCouponService` + `StreamIssueConsumer`). 낙관적 락은 같은 `coupons` 테이블에 매핑한 `VersionedCoupon`(@Version)만 쓴다. `Coupon` 에는 @Version 을 넣지 않는다
 - **WriteBehind** – 9단계 write-behind. `WriteBehindIssueService`(요청: Lua 로 판단·예약·적재 요청 기록), `WriteBehindLoader`(적재: INSERT 만, 대사), `wb-loader` 프로필 적재기 프로세스. 기존 코드에는 방식 이름·`LabService` 분기·202 목록만 등록
+- **WriteBehindNoTx** – 10단계. 9단계와 같고 회원 확인만 `MemberExistsRepository`(`@Transactional(readOnly = true, propagation = SUPPORTS)`, 트랜잭션 없이 SELECT 한 문장)로. 적재기·대사·스트림은 9단계 것을 그대로 쓴다
 - **Lab** – `local` 프로필 전용 실험 API(`/lab/**`, 인증 없음). 데이터 준비, 방식 선택 발급, 결과 조회, 초기화. 단일 진입점 `LabService.issue()` 가 도착 순서와 결과를 기록
 
 ### API Endpoints
@@ -55,7 +56,7 @@ docker build -t docker-coupon .
 | Method | Path | 설명 |
 |---|---|---|
 | POST | `/lab/members`, `/lab/coupons` | 실험 데이터 준비 (local 전용) |
-| POST | `/lab/coupons/{couponId}/issue` | `{memberId, method, duplicateCheck?}` 로 방식 선택 발급 (local 전용). `REDIS_ASYNC`, `REDIS_PUBSUB`, `REDIS_STREAM`, `REDIS_STREAM_ATOMIC`, `REDIS_WRITE_BEHIND` 는 202 |
+| POST | `/lab/coupons/{couponId}/issue` | `{memberId, method, duplicateCheck?}` 로 방식 선택 발급 (local 전용). `REDIS_ASYNC`, `REDIS_PUBSUB`, `REDIS_STREAM`, `REDIS_STREAM_ATOMIC`, `REDIS_WRITE_BEHIND`, `REDIS_WRITE_BEHIND_NO_TX` 는 202 |
 | GET | `/lab/coupons/{couponId}/result` | 검증 기준·순서·지연·락 카운터 (local 전용) |
 | POST | `/lab/write-behind/coupons/{couponId}/reconcile` | 9단계 대사: Redis 에만 있는 회원 INSERT, `issued_count` 를 행 수로 맞춤, DB 에만 있는 회원·재고 초과 보고 (local 전용) |
 | DELETE | `/lab/data` | 설정된 DB 3개 테이블 TRUNCATE + Redis `coupon:*` 삭제 (local 전용) |

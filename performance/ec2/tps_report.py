@@ -2,7 +2,7 @@
 import sys, re, json, os, datetime, bisect, collections
 D = sys.argv[1]
 SYNC = {'pessimistic', 'lua'}
-LABEL = {'pessimistic': '비관적 락', 'lua': '동기 Lua', 'async': '비동기 (작업 스레드 4)', 'pubsub': 'Pub/Sub (구독자 프로세스 1)', 'stream': 'Stream 한 스크립트 (소비자 프로세스 1)', 'wb': 'Write-behind (적재기 프로세스 1)'}
+LABEL = {'pessimistic': '비관적 락', 'lua': '동기 Lua', 'async': '비동기 (작업 스레드 4)', 'pubsub': 'Pub/Sub (구독자 프로세스 1)', 'stream': 'Stream 한 스크립트 (소비자 프로세스 1)', 'wb': 'Write-behind (적재기 프로세스 1)', 'wb10': 'Write-behind, 회원 확인 트랜잭션 없음 (적재기 프로세스 1)'}
 W0, W1 = 5.0, 28.0  # 측정 시작 뒤 이 구간을 보내기 정상 구간으로 본다. 끝을 보내기가 끝나는 30초에 두면 1초 표본 사이 보간이 멈춘 뒤 값과 섞여 약 1% 낮게 나온다
 
 def interp(points, x):
@@ -43,7 +43,7 @@ for name, cid, t0, app_cpu, k6_cpu in runs:
     if backlog > 0.01 * sent: fails.append('미완료 > 1%')
     if cfg in SYNC and p95 > 500: fails.append('p95 > 500ms')
     # write-behind 는 대사 전까지 issued_count 를 갱신하지 않으므로 그 검사는 빼고 본다(대사 뒤 결과는 따로 확인)
-    checks = {k: v for k, v in d['checks'].items() if not (cfg == 'wb' and k == 'issuedCountMatchesRows')}
+    checks = {k: v for k, v in d['checks'].items() if not (cfg in ('wb', 'wb10') and k == 'issuedCountMatchesRows')}
     ok = all(v in (True, None) for v in checks.values()) and (cfg == 'pessimistic' or (d['redisOnlyMembers'] == 0 and d['dbOnlyMembers'] == 0))
     rows.setdefault(cfg, []).append(dict(rate=rate, rnd=rnd, sent=sent, dropped=dropped, steady=steady, smin=min(per_sec) if per_sec else 0,
         smax=max(per_sec) if per_sec else 0, commit=commit_rate, p95=p95, backlog=backlog, confirm=float(t.group(2)), done=float(t.group(1)),

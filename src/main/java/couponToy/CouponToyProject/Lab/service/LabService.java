@@ -17,6 +17,7 @@ import couponToy.CouponToyProject.CouponIssue.service.StreamIssueCouponService;
 import couponToy.CouponToyProject.global.constant.ErrorCode;
 import couponToy.CouponToyProject.global.exception.CouponNotFoundException;
 import couponToy.CouponToyProject.WriteBehind.service.WriteBehindIssueService;
+import couponToy.CouponToyProject.WriteBehindNoTx.service.WriteBehindNoTxIssueService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Profile;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -55,6 +56,7 @@ public class LabService {
     private final PubSubIssueCouponService pubSubIssueCouponService;
     private final StreamIssueCouponService streamIssueCouponService;
     private final WriteBehindIssueService writeBehindIssueService;
+    private final WriteBehindNoTxIssueService writeBehindNoTxIssueService;
     private final CouponIssuedRedisRepository couponIssuedRedisRepository;
     private final JdbcTemplate jdbcTemplate;
     private final StringRedisTemplate redisTemplate;
@@ -167,6 +169,12 @@ public class LabService {
                 case REDIS_WRITE_BEHIND -> {
                     // Redis 에 예약과 적재 요청만 남기고 돌아온다. DB 행은 적재기(wb-loader)가 나중에 넣는다
                     writeBehindIssueService.issue(memberId, couponId);
+                    handedOff = IssueOutcome.QUEUED;
+                    yield IssueCouponResponse.builder().memberId(memberId).couponId(couponId).build();
+                }
+                case REDIS_WRITE_BEHIND_NO_TX -> {
+                    // 9단계와 같고 회원 확인만 트랜잭션 없이 한다(10단계). 이 분기에도 바깥 트랜잭션이 없어야 설정 문장이 빠진다
+                    writeBehindNoTxIssueService.issue(memberId, couponId);
                     handedOff = IssueOutcome.QUEUED;
                     yield IssueCouponResponse.builder().memberId(memberId).couponId(couponId).build();
                 }
