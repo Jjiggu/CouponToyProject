@@ -1,9 +1,0 @@
-.git
-.gradle
-build
-out
-.idea
-*.iml
-.DS_Store
-monitoring/grafana/data
-monitoring/prometheus/data

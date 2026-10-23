@@ -1,6 +1,6 @@
 # 선착순 쿠폰 발급: 동시성 제어와 비동기 처리 학습
 
-한 단계씩 구현하고, 직접 실행해서 확인한 것만 적는다. 이전 문서(`docs/performance`, `docs/coupon-performance-test`, `docs/overview.md` 등)는 JWT 인증과 이전 엔드포인트 기준이며 결과 보존용이다. 그 수치를 새 구현의 성과로 쓰지 않는다.
+한 단계씩 구현하고, 직접 실행해서 확인한 것만 적는다. 학습 정리 이전(JWT 인증, 이전 엔드포인트) 문서와 측정 결과는 2026-10-23 에 지웠다(아래 정리 내역, git 이력에 남아 있다).
 
 | 단계 | 주제 | 상태 |
 |---|---|---|
@@ -133,11 +133,7 @@ API (`local` 프로필에서만 등록, 인증 없음)
 | 대상 | 이유 |
 |---|---|
 | `PessimisticIssueCouponService`, `findByCouponIdForUpdate` | 2단계 비관적 락 비교 대상 (변경 없음) |
-| `monitoring/` | Grafana 대시보드 (앱 지표 패널 4개는 4단계에서 삭제) |
 | `Member` 의 email/password/role 컬럼 | 기존 DB 볼륨의 NOT NULL 컬럼과 맞추기 위해 |
-| `performance/sql/consistency-check.sql` | 결과 API 를 원시 SQL 로 교차 확인 |
-| `performance/scripts/aggregate-k6-results.js` | 이전 결과 문서 생성기. 실행하면 `latest-summary.md` 를 덮어써서 이번에는 실행하지 않음 |
-| `perf/` (미추적, 311MB) | 회원가입·로그인 HTTP 흐름 기반의 이전 도구와 결과. 건드리지 않음 |
 
 ### 삭제 (2026-10-15)
 파일은 git 이력에 남아 있다.
@@ -165,4 +161,17 @@ API (`local` 프로필에서만 등록, 인증 없음)
 | `CouponIssueMetrics`, `CouponIssueResult`, `CouponIssueStrategy` 의 지표 태그 | 이벤트 방식에서만 기록. 결과 API 가 대체 |
 | `CouponIssuedRedisRepository.checkAndRegister` | 이벤트 방식만 쓰던 MULTI/EXEC 예약. 4~6단계는 Lua 예약 |
 | Grafana 패널 4개(`coupon_issue_*`) | 위 지표 삭제로 데이터가 없다 |
-| 작업 전부터 있던 미커밋 변경 3개 파일(`EventIssueCouponService`, `CouponIssueEventListener`, `EventIssueCouponServiceTest`) | 재작성 전에 `git stash` 로 보관(`stash@{0}`). `git stash show -p --include-untracked stash@{0}` 로 볼 수 있다 |
+| 작업 전부터 있던 미커밋 변경 3개 파일(`EventIssueCouponService`, `CouponIssueEventListener`, `EventIssueCouponServiceTest`) | 재작성 전에 `git stash` 로 보관(`stash@{0}`). 2026-10-23 에 stash 도 지웠다 |
+
+### 삭제 (2026-10-23)
+
+1~10단계에서 한 번도 쓰지 않은 것과 학습 정리 이전의 측정 기록. 1~10단계 측정 기록(`docs/learning/results/`)과 저장소 밖 실험 스크립트(`build/`)는 남겼다.
+
+| 대상 | 이유 |
+|---|---|
+| `docs/overview.md`, `auth.md`, `coupon-issue.md`, `error-handling.md`, `test-guide.md` | JWT 인증과 이전 엔드포인트 기준 문서 |
+| `docs/performance/`, `docs/coupon-performance-test/` | 이전 구조의 성능 테스트 문서와 결과. 미커밋 수정(`latest-summary.md`)과 미추적 파일(`baseline-1cpu-summary.md`)도 함께 지웠다 |
+| `performance/scripts/aggregate-k6-results.js`, `performance/sql/consistency-check.sql` | 이전 결과 집계기, 결과 API 교차 확인용 SQL. 1~10단계에서 실행하지 않았다 |
+| `perf/` (미추적, 311MB) | 회원가입·로그인 흐름 기반의 이전 k6 도구와 결과. git 에 없어 되살릴 수 없다 |
+| `monitoring/`, `docker-compose.yml` 의 app·cadvisor·exporter 3개·prometheus·grafana, `Dockerfile`, `.dockerignore`, prometheus 의존성 3개 | 1~10단계 측정은 Docker API(컨테이너 CPU)와 `performance_schema`, 결과 API 로 했다. actuator 는 health 확인에 쓰므로 남겼다. mysql·redis 서비스와 그 미커밋 설정은 그대로다 |
+| `git stash@{0}` | 4단계 재작성 전 보관한 이벤트 방식 WIP. 4단계에서 `@Async` 로 대체됐다 |

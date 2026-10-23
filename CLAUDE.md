@@ -27,17 +27,10 @@ LAB_CHANGE_MYSQL_GLOBALS=true ./gradlew test --tests "*.IsolationLockSettingsExp
 
 ### Infrastructure (Docker)
 ```bash
-# src/main/resources/docker-compose.yml 기준
-docker compose -f src/main/resources/docker-compose.yml up -d
+docker compose up -d   # 루트 docker-compose.yml: mysql, redis 만 (각 1 CPU / 1GB, Redis 영속화 끔)
 ```
 - MySQL: `localhost:3306`
 - Redis: `localhost:6379`
-
-### Docker Image Build
-```bash
-./gradlew build
-docker build -t docker-coupon .
-```
 
 ## Architecture
 

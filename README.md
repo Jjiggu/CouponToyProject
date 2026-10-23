@@ -124,21 +124,3 @@ AsyncIssueCouponService.issue(memberId, couponId)        ← 요청 스레드
 |---|---|---|
 | `coupon:total:{couponId}` | String | 총 발급 수량 (쿠폰 생성 시 웜업, 불변) |
 | `coupon:issued:{couponId}` | SET | 발급 자격을 예약한 회원 집합 (DB 확정 전 예약도 들어 있다) |
-
-## 이전 문서 (보존용)
-
-학습 정리 이전 구조(JWT 인증, 이전 엔드포인트) 기준 문서와 결과다. 현재 코드와 다를 수 있다.
-
-- [docs/overview.md](./docs/overview.md) — 시스템 개요, DB 스키마
-- [docs/auth.md](./docs/auth.md) — 인증 플로우
-- [docs/coupon-issue.md](./docs/coupon-issue.md) — 쿠폰 발급 플로우 상세
-- [docs/error-handling.md](./docs/error-handling.md) — 예외 처리
-- [docs/test-guide.md](./docs/test-guide.md) — 테스트 실행 순서와 결과 확인 방법
-- [docs/performance/coupon-issue-comparison.md](./docs/performance/coupon-issue-comparison.md) — `k6` 성능 비교 가이드
-- [docs/performance/monitoring-guide.md](./docs/performance/monitoring-guide.md) — Grafana/Prometheus 모니터링 가이드
-- [docs/performance/max-tps-guide.md](./docs/performance/max-tps-guide.md) — 최대 TPS 측정 가이드
-- [docs/performance/max-tps-results.md](./docs/performance/max-tps-results.md) — 최대 TPS 측정 결과와 해석
-
-## Coupon Performance Test Docs
-
-쿠폰 발급 성능/부하 테스트 문서는 [docs/coupon-performance-test](docs/coupon-performance-test/README.md)에 정리되어 있습니다.

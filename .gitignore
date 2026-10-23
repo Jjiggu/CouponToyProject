@@ -16,6 +16,7 @@ monitoring/grafana/provisioning/datasources/mysql.yml
 perf/results/*
 performance/data/
 performance/results/*.json
+performance/results/**/*.json
 !performance/results/.gitkeep
 !perf/results/.gitkeep
 !perf/results/manual/
