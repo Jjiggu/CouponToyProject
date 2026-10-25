@@ -2,6 +2,8 @@
 # EC2 측정. Mac 에서 실행하고, 인스턴스는 SSH 로만 다룬다. 인스턴스 정보는 build/ec2/hosts.env (README 참고)
 #   performance/ec2/ec2.sh setup        패키지 설치, DB 인스턴스에 MySQL·Redis 기동, jar·k6 스크립트 올리기 (코드가 바뀌면 다시)
 #   performance/ec2/ec2.sh tps <이름>    쿠폰 1장의 따라간 최대 속도 측정. 결과는 build/ec2/<이름>/
+#   performance/ec2/ec2.sh event <이름>  선착순 쿠폰 이벤트 오픈 시나리오(재고 < 회원, 몰림 → 유지 → 이탈 → 꼬리). 끝난 뒤 적재 완료·대사·최종 정합성 확인
+#     METHOD=REDIS_WRITE_BEHIND_NO_TX PEAK=4000 RAMP_SEC=10 HOLD_MIN=2 DECAY_MIN=3 TAIL_RATE=800 TAIL_MIN=5 STOCK=7000 MEMBERS=100000 DOUBLE_CLICK=0.05
 #     CONFIGS="pessimistic lua async pubsub stream wb wb10"  ROUNDS=2  RATES="450 500 550 600 650 700"  PESSIMISTIC_RATES="300 350 400 450"  WARM_RATE=200
 set -u
 cd "$(dirname "$0")/../.."
@@ -85,8 +87,54 @@ tps() {
   python3 performance/ec2/tps_report.py $L > $L/report.md
 }
 
+rcli() { on $DB_PUB "docker exec coupon-toy-redis redis-cli -n 2 $*"; }
+event() {
+  L=build/ec2/${1:?결과 디렉터리 이름}; mkdir -p $L
+  local method=${METHOD:-REDIS_WRITE_BEHIND_NO_TX}
+  local params="METHOD=$method PEAK=${PEAK:-4000} RAMP_SEC=${RAMP_SEC:-10} HOLD_MIN=${HOLD_MIN:-2} DECAY_MIN=${DECAY_MIN:-3} TAIL_RATE=${TAIL_RATE:-800} TAIL_MIN=${TAIL_MIN:-5} STOCK=${STOCK:-7000} MEMBERS=${MEMBERS:-100000} DOUBLE_CLICK=${DOUBLE_CLICK:-0.05}"
+  echo "$params" > $L/params.txt
+  # 1. 발행자와 적재기를 띄우고 실험 데이터를 비운다. 예열(초당 200건 30초, 따로 쿠폰)은 버린다
+  start_jar event-pub 18080 local || return 1
+  on $APP_PUB "curl -s -X DELETE localhost:18080/lab/data" > /dev/null
+  start_jar event-loader 18081 wb-loader || return 1
+  run_level warm-event $method 200
+  put $K6_PUB performance/k6/coupon-event.js performance/ec2/host_sampler.sh .
+  put $APP_PUB performance/ec2/host_sampler.sh .
+  drain
+  # 2. 표본 기록: DB 인스턴스(MySQL CPU 0.1초, 발급 행·커밋·Redis 명단 1초), 앱·k6 인스턴스(CPU, java 메모리 1초)
+  on $DB_PUB "rm -f /tmp/event.stop; nohup python3 sampler.py /tmp/event /tmp/event.stop > /dev/null 2>&1 < /dev/null &"
+  local h; for h in $APP_PUB $K6_PUB; do on $h "rm -f /tmp/event.stop; nohup bash host_sampler.sh /tmp/event.host /tmp/event.stop > /dev/null 2>&1 < /dev/null &"; done
+  # 3. 부하
+  on $K6_PUB "env BASE_URL=http://$APP_PRIV:18080 $params k6 run --quiet --no-color --summary-export /tmp/event.json coupon-event.js" > $L/event.log 2>&1
+  local ec=$? cid=$(q "SELECT MAX(coupon_id) FROM coupons")
+  echo "k6_exit=$ec coupon=$cid created=$(q "SELECT DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s.%f') FROM coupons WHERE coupon_id=$cid")" > $L/final.txt
+  # 4. 적재가 끝나기를 기다린다: DB 발급 행 수 = Redis 명단 수 (최대 300초)
+  local t0=$(date +%s) rows scard i
+  for i in $(seq 1 300); do
+    rows=$(q "SELECT COUNT(*) FROM coupon_issues WHERE coupon_id=$cid"); scard=$(rcli SCARD coupon:issued:$cid)
+    [ "$rows" = "$scard" ] && break; sleep 1
+  done
+  echo "drain_wait_s=$(( $(date +%s) - t0 )) rows=$rows scard=$scard" >> $L/final.txt
+  # 5. 대사(issued_count 를 행 수로, Redis 에만 있는 회원 넣기)와 결과 API
+  on $APP_PUB "curl -s -X POST localhost:18080/lab/write-behind/coupons/$cid/reconcile" > $L/reconcile.json
+  on $APP_PUB "curl -s localhost:18080/lab/coupons/$cid/result" > $L/result.json
+  # 6. 저장소를 직접 본다
+  { echo "mysql_rows_distinct_issued_total=$(q "SELECT CONCAT_WS(',', COUNT(*), COUNT(DISTINCT member_id), (SELECT issued_count FROM coupons WHERE coupon_id=$cid), (SELECT total_count FROM coupons WHERE coupon_id=$cid)) FROM coupon_issues WHERE coupon_id=$cid")"
+    echo "redis_scard=$(rcli SCARD coupon:issued:$cid)"
+    echo "stream_len=$(rcli XLEN coupon:wb:stream)"
+    echo "stream_pending=$(rcli XPENDING coupon:wb:stream coupon-wb-loaders | head -1)"
+    echo "dead_letters=$(rcli XLEN coupon:wb:stream:dead)"; } >> $L/final.txt
+  # 7. 표본 멈추고 가져오기, 앱 정리
+  for h in $DB_PUB $APP_PUB $K6_PUB; do on $h "touch /tmp/event.stop"; done
+  on $DB_PUB "while pgrep -f 'sample[r].py /tmp/event ' > /dev/null; do sleep 0.2; done"
+  get $DB_PUB /tmp/event.cpu $L/; get $DB_PUB /tmp/event.tps $L/; get $APP_PUB /tmp/event.host $L/app.host; get $K6_PUB /tmp/event.host $L/k6.host; get $K6_PUB /tmp/event.json $L/
+  stop_port 18081; stop_port 18080
+  python3 performance/ec2/event_report.py $L > $L/report.md
+}
+
 case ${1:-} in
   setup) setup ;;
   tps) shift; tps "$@" ;;
-  *) sed -n 2,5p "$0"; exit 1 ;;
+  event) shift; event "$@" ;;
+  *) sed -n 2,7p "$0"; exit 1 ;;
 esac

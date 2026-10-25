@@ -65,6 +65,18 @@ RATES="..." PESSIMISTIC_RATES="..." performance/ec2/ec2.sh tps tps
 
 결과는 `build/ec2/<이름>/` 에 모이고 `report.md` 로 요약된다. 조건과 판정은 Mac 측정과 같다(설정마다 앱을 새로 띄우고 데이터를 비운 뒤 초당 200건 30초 예열을 버리고, 각 속도 30초). Mac 과 다른 점은 표본용 MySQL 조회를 컨테이너 밖(DB 인스턴스의 `mysql` 클라이언트)에서 한다는 것이다.
 
+## 선착순 쿠폰 이벤트 오픈 시나리오
+
+```bash
+PEAK=4000 HOLD_MIN=2 TAIL_RATE=800 STOCK=7000 MEMBERS=100000 performance/ec2/ec2.sh event event
+```
+
+1. 발행자와 적재기를 띄우고 실험 데이터를 비운 뒤, 초당 200건 30초 예열(따로 쿠폰)을 버린다
+2. 표본 기록을 시작한다: DB 인스턴스(MySQL CPU 0.1초, 발급 행·커밋·Redis 명단 1초), 앱·k6 인스턴스(CPU, java 메모리 1초, `host_sampler.sh`)
+3. `k6/coupon-event.js` 로 오픈 → 몰림 유지 → 이탈 → 꼬리 순서로 보낸다
+4. DB 발급 행 수가 Redis 명단 수와 같아질 때까지 기다리고(최대 300초), 대사 API 와 결과 API 를 부르고, Redis·MySQL 을 직접 본다(`final.txt`)
+5. `event_report.py` 가 분 단위 표, 최종 정합성 표, 판정(분마다 서버 오류 0·응답 p95 < 100ms·MySQL CPU < 90%, 못 보낸 요청 0, 정합성 모두 맞음)을 `report.md` 로 만든다
+
 ## 비용과 정리
 
 - 세 대 합쳐 시간당 약 0.29달러(us-east-1 온디맨드 기준 c7g.large 0.0725 × 2 + c7g.xlarge 0.145, 서울은 조금 더 비싸다) + 퍼블릭 IPv4 대당 시간당 0.005달러 + 디스크. 준비와 한 번의 전체 측정에 2시간 남짓 걸린다
