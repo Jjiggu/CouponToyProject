@@ -17,20 +17,25 @@ public enum ErrorCode {
 
     INTERNAL_SERVER_ERROR("Internal Server Error"),
 
-    UNAUTHORIZED("인증 오류"),
-
-
-    // Custom Exception 에 대한 ErrorCode
-    ACCESS_FORBIDDEN("권한 오류"),
-
 
     // Member
-
-    DUPLICATE_EMAIL("이미 존재하는 이메일입니다"),
-    DUPLICATE_MEMBER("이미 등록된 회원입니다."),
     NOT_FOUND_MEMBER("일치하는 회원정보가 없습니다."),
 
-    NOT_FOUND_COUPON("일치하는 쿠폰정보가 없습니다. 쿠폰 번호를 확인해주세요");
+    // Coupon
+    NOT_FOUND_COUPON("일치하는 쿠폰정보가 없습니다. 쿠폰 번호를 확인해주세요"),
+    COUPON_SOLD_OUT("쿠폰이 모두 소진되었습니다."),
+
+
+    // Queue
+    IS_ALREADY_ISSUED("이미 쿠폰 발급 받은 사용자입니다."),
+
+    // DB 가 막은 경우
+    UNIQUE_VIOLATION("이미 쿠폰 발급 받은 사용자입니다. (DB UNIQUE 제약 위반)"),
+    LOCK_FAILURE("DB 락 충돌로 트랜잭션이 롤백되었습니다. (데드락 또는 락 대기 시간 초과)"),
+    OPTIMISTIC_CONFLICT("다른 요청이 먼저 쿠폰을 변경해 트랜잭션이 롤백되었습니다. (낙관적 락 버전 충돌)"),
+
+    // 비동기 발급
+    ASYNC_QUEUE_FULL("발급 처리 대기열이 가득 찼습니다. 잠시 후 다시 요청해주세요.");
 
     private final String message;
 }
