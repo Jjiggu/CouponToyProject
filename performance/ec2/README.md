@@ -1,6 +1,6 @@
 # EC2 에서 측정하기
 
-Mac 에서는 k6·앱·MySQL·Redis 가 한 기계의 CPU 를 나눠 쓰고 다른 프로그램도 함께 돌아, 50 req/s 차이를 가를 수 없었다([Mac 측정](../../docs/learning/results/2026-10-20-tps-mac.md)). 세 역할을 인스턴스로 나눠 같은 측정을 다시 한다. 결과와 해석: [08. AWS(EC2)에서 잰 쿠폰 1장 발급 확정 한계](../../docs/learning/08-load-test-ec2.md)
+Mac 에서는 k6·앱·MySQL·Redis 가 한 기계의 CPU 를 나눠 쓰고 다른 프로그램도 함께 돌아, 50 req/s 차이를 가를 수 없었다([Mac 측정](../../docs/learning/results/2026-10-20-tps-mac.md)). 세 역할을 인스턴스로 나눠 같은 측정을 다시 한다. 결과와 해석: [08. AWS(EC2)에서 잰 쿠폰 1장 실제 지급 한계](../../docs/learning/08-load-test-ec2.md)
 
 ## 구성
 
@@ -72,9 +72,9 @@ PEAK=4000 HOLD_MIN=2 TAIL_RATE=800 STOCK=7000 MEMBERS=100000 performance/ec2/ec2
 ```
 
 1. 발행자와 적재기를 띄우고 실험 데이터를 비운 뒤, 초당 200건 30초 예열(따로 쿠폰)을 버린다
-2. 표본 기록을 시작한다: DB 인스턴스(MySQL CPU 0.1초, 발급 행·커밋·Redis 명단 1초), 앱·k6 인스턴스(CPU, java 메모리 1초, `host_sampler.sh`)
+2. 표본 기록을 시작한다: DB 인스턴스(MySQL CPU 0.1초, 지급 행·커밋·Redis 명단 1초), 앱·k6 인스턴스(CPU, java 메모리 1초, `host_sampler.sh`)
 3. `k6/coupon-event.js` 로 오픈 → 몰림 유지 → 이탈 → 꼬리 순서로 보낸다
-4. DB 발급 행 수가 Redis 명단 수와 같아질 때까지 기다리고(최대 300초), 대사 API 와 결과 API 를 부르고, Redis·MySQL 을 직접 본다(`final.txt`)
+4. DB 지급 행 수가 Redis 명단 수와 같아질 때까지 기다리고(최대 300초), 대사 API 와 결과 API 를 부르고, Redis·MySQL 을 직접 본다(`final.txt`)
 5. `event_report.py` 가 분 단위 표, 최종 정합성 표, 판정(분마다 서버 오류 0·응답 p95 < 100ms·MySQL CPU < 90%, 못 보낸 요청 0, 정합성 모두 맞음)을 `report.md` 로 만든다
 
 ## 비용과 정리

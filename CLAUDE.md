@@ -153,6 +153,22 @@ Redis 가 기준이라 DB 의 조건부 UPDATE 방어가 없다. Redis 가 기�
 - MySQL 8.0.36, Redis 7.2
 - Test: JUnit 5, k6 (`performance/k6/coupon-issue.js`)
 
+## 문서 용어
+
+`docs/learning/`, `performance/` 의 README 는 여기어때 기술 블로그 "Redis&Kafka를 활용한 선착순 쿠폰 이벤트 개발기 (feat. 네고왕)" 의 표현을 따른다.
+
+| 뜻 | 쓰는 말 | 쓰지 않는 말 |
+|---|---|---|
+| 쿠폰을 주는 일 전반 | 지급 (초과 지급, 중복 지급, 총 지급 수량, 지급 TPS) | 발급 |
+| Redis SET 에 회원을 넣는 것 (SADD) | Redis 지급 처리 | 예약, 선점 |
+| Redis 에서 수량·중복을 따지는 것 | 지급 가능 여부 판단 | 예약 판단 |
+| DB 에 저장하는 것 (`coupon_issues` INSERT 등) | 실제 쿠폰 지급 (실제 지급 상한, 실제 지급 TPS) | 확정 |
+| HTTP 202 응답 | 지급 성공 응답 | 접수 |
+
+- 코드·클래스·메서드·enum·API 필드·Redis 키·설정 이름(`IssueConfirmService`, `ACCEPTED`, `coupon:issued:{couponId}` 등), 실제 에러 메시지 문구, 외부 글 인용은 그대로 둔다
+- `docs/learning/results/` 의 실행 원본과 k6·리포트 스크립트(`performance/k6/*.js`, `performance/ec2/*.py`)가 찍는 출력 문구(`접수 처리량`, `발급 완료 처리량`, `발급 TPS` 등)는 그대로 둔다
+- 9단계 이후 write-behind 의 "적재" 는 그대로 쓴다
+
 ## 행동 지침
 
 > 속도보다 신중함에 무게를 둔다. 사소한 작업에는 판단력을 활용할 것.
