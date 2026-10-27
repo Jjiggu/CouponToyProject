@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-선착순 쿠폰 발급 처리 토이 프로젝트. Spring Boot + MySQL + Redis(SET) 기반으로 고동시성 쿠폰 발급을 구현한다.
+선착순 쿠폰 지급 처리 토이 프로젝트. Spring Boot + MySQL + Redis(SET) 기반으로 고동시성 쿠폰 지급을 구현한다.
 
 ## Commands
 
@@ -39,75 +39,75 @@ docker compose up -d   # 루트 docker-compose.yml: mysql, redis 만 (각 1 CPU 
 
 - **Member** – 실험용 회원 엔티티 (인증 없음. email/password/role 컬럼은 기존 DB 스키마 호환용)
 - **Coupon** – 쿠폰 엔티티와 생성
-- **CouponIssue** – 쿠폰 발급. 학습 단계별 비교 구현 (`IsolationIssueCouponService`, `PessimisticIssueCouponService`, `OptimisticIssueCouponService`, `RedisIssueCouponService` + `IssueConfirmService`, `AsyncIssueCouponService`, `PubSubIssueCouponService` + `PubSubIssueConsumer`, `StreamIssueCouponService` + `StreamIssueConsumer`). 낙관적 락은 같은 `coupons` 테이블에 매핑한 `VersionedCoupon`(@Version)만 쓴다. `Coupon` 에는 @Version 을 넣지 않는다
-- **WriteBehind** – 9단계 write-behind. `WriteBehindIssueService`(요청: Lua 로 판단·예약·적재 요청 기록), `WriteBehindLoader`(적재: INSERT 만, 대사), `wb-loader` 프로필 적재기 프로세스. 기존 코드에는 방식 이름·`LabService` 분기·202 목록만 등록
+- **CouponIssue** – 쿠폰 지급. 학습 단계별 비교 구현 (`IsolationIssueCouponService`, `PessimisticIssueCouponService`, `OptimisticIssueCouponService`, `RedisIssueCouponService` + `IssueConfirmService`, `AsyncIssueCouponService`, `PubSubIssueCouponService` + `PubSubIssueConsumer`, `StreamIssueCouponService` + `StreamIssueConsumer`). 낙관적 락은 같은 `coupons` 테이블에 매핑한 `VersionedCoupon`(@Version)만 쓴다. `Coupon` 에는 @Version 을 넣지 않는다
+- **WriteBehind** – 9단계 write-behind. `WriteBehindIssueService`(요청: Lua 로 지급 가능 여부 판단·Redis 지급 처리·적재 요청 기록), `WriteBehindLoader`(적재: INSERT 만, 대사), `wb-loader` 프로필 적재기 프로세스. 기존 코드에는 방식 이름·`LabService` 분기·202 목록만 등록
 - **WriteBehindNoTx** – 10단계. 9단계와 같고 회원 확인만 `MemberExistsRepository`(`@Transactional(readOnly = true, propagation = SUPPORTS)`, 트랜잭션 없이 SELECT 한 문장)로. 적재기·대사·스트림은 9단계 것을 그대로 쓴다
-- **Lab** – `local` 프로필 전용 실험 API(`/lab/**`, 인증 없음). 데이터 준비, 방식 선택 발급, 결과 조회, 초기화. 단일 진입점 `LabService.issue()` 가 도착 순서와 결과를 기록
+- **Lab** – `local` 프로필 전용 실험 API(`/lab/**`, 인증 없음). 데이터 준비, 방식 선택 지급, 결과 조회, 초기화. 단일 진입점 `LabService.issue()` 가 도착 순서와 결과를 기록
 
 ### API Endpoints
 
 | Method | Path | 설명 |
 |---|---|---|
 | POST | `/lab/members`, `/lab/coupons` | 실험 데이터 준비 (local 전용) |
-| POST | `/lab/coupons/{couponId}/issue` | `{memberId, method, duplicateCheck?}` 로 방식 선택 발급 (local 전용). `REDIS_ASYNC`, `REDIS_PUBSUB`, `REDIS_STREAM`, `REDIS_STREAM_ATOMIC`, `REDIS_WRITE_BEHIND`, `REDIS_WRITE_BEHIND_NO_TX` 는 202 |
+| POST | `/lab/coupons/{couponId}/issue` | `{memberId, method, duplicateCheck?}` 로 방식 선택 지급 (local 전용). `REDIS_ASYNC`, `REDIS_PUBSUB`, `REDIS_STREAM`, `REDIS_STREAM_ATOMIC`, `REDIS_WRITE_BEHIND`, `REDIS_WRITE_BEHIND_NO_TX` 는 202(지급 성공 응답) |
 | GET | `/lab/coupons/{couponId}/result` | 검증 기준·순서·지연·락 카운터 (local 전용) |
 | POST | `/lab/write-behind/coupons/{couponId}/reconcile` | 9단계 대사: Redis 에만 있는 회원 INSERT, `issued_count` 를 행 수로 맞춤, DB 에만 있는 회원·재고 초과 보고 (local 전용) |
 | DELETE | `/lab/data` | 설정된 DB 3개 테이블 TRUNCATE + Redis `coupon:*` 삭제 (local 전용) |
 
-### Redis 발급 플로우 (3단계)
+### Redis 지급 플로우 (3단계)
 
 ```
 RedisIssueCouponService.issue(memberId, couponId, method)   ← DB 트랜잭션 없음
 
   [0] GET coupon:total:{couponId}                총수량 (없으면 DB 에서 읽어 다시 넣음)
-  [1] Redis 예약 (CouponIssuedRedisRepository)     "이미 예약됨 → 재고 소진 → 예약" 순서, 원자성만 방식별로 다름
+  [1] Redis 지급 처리 (CouponIssuedRedisRepository)  "이미 지급 처리됨 → 재고 소진 → 지급 처리" 순서, 원자성만 방식별로 다름
         REDIS_SET_ONLY    SISMEMBER, SCARD, SADD 를 따로 보냄 (명령 사이에 다른 요청이 끼어든다)
         REDIS_MULTI_EXEC  MULTI SCARD SADD EXEC → Java 판단 → 재고 초과면 SREM
         REDIS_WATCH       WATCH → 읽기 → MULTI SADD EXEC (키가 바뀌었으면 다시, 최대 10회)
         REDIS_LUA         EVALSHA 한 번 (4~6단계 공통 기준)
-  [2] IssueConfirmService.confirm() — 별도 DB 트랜잭션
+  [2] IssueConfirmService.confirm() — 실제 쿠폰 지급, 별도 DB 트랜잭션
         INSERT coupon_issues                     UNIQUE(coupon_id, member_id)
         UPDATE coupons SET issued_count = issued_count + 1
          WHERE coupon_id = ? AND issued_count < total_count   0건이면 SOLD_OUT_AT_DB
-  [3] [2] 실패 시 SREM 으로 예약을 되돌린다. UNIQUE 위반(이미 발급된 회원)은 되돌리지 않는다
+  [3] [2] 실패 시 SREM 으로 Redis 지급 처리를 취소한다. UNIQUE 위반(이미 지급된 회원)은 취소하지 않는다
 ```
 
-### 비동기 발급 플로우 (4단계, REDIS_ASYNC)
+### 비동기 지급 플로우 (4단계, REDIS_ASYNC)
 
 ```
 AsyncIssueCouponService.issue(memberId, couponId)        ← 요청 스레드
-  [1] RedisIssueCouponService.reserve(LUA)                3단계와 같은 예약
-  [2] RedisIssueCouponService.confirmLater()  @Async     couponIssueExecutor 큐에 넣고 바로 반환 → HTTP 202 (접수)
+  [1] RedisIssueCouponService.reserve(LUA)                3단계와 같은 Redis 지급 처리
+  [2] RedisIssueCouponService.confirmLater()  @Async     couponIssueExecutor 큐에 넣고 바로 반환 → HTTP 202 (지급 성공 응답)
         큐가 가득 차면 TaskRejectedException → SREM, HTTP 503
 작업 스레드 (스레드 풀 couponIssueExecutor: 기본 4개, 큐 50000, JVM 메모리)
-  [3] IssueConfirmService.confirm(), 실패 시 SREM          3단계와 같은 확정·보상
-결과 API: asyncResults(접수된 요청의 확정 결과), pending(접수됐지만 확정 결과가 아직 없는 요청)
+  [3] IssueConfirmService.confirm(), 실패 시 SREM          3단계와 같은 실제 지급·보상
+결과 API: asyncResults(지급 성공 응답을 보낸 요청의 실제 지급 결과), pending(지급 성공 응답을 보냈지만 실제 지급 결과가 아직 없는 요청)
 ```
 
-### Pub/Sub 발급 플로우 (5단계, REDIS_PUBSUB)
+### Pub/Sub 지급 플로우 (5단계, REDIS_PUBSUB)
 
 ```
 발행자 프로세스 (local)        PubSubIssueCouponService.issue()      ← 요청 스레드
-  [1] RedisIssueCouponService.reserve(LUA)                          3단계와 같은 예약
+  [1] RedisIssueCouponService.reserve(LUA)                          3단계와 같은 Redis 지급 처리
   [2] PUBLISH coupon:issue:requests "memberId:couponId" → HTTP 202 (PUBLISHED)
         돌려받는 "받은 구독자 수" 는 완료가 아니다. 구독자가 없으면 0 이고 메시지는 사라진다
 구독자 프로세스 (pubsub-consumer)   PubSubIssueConsumer → 작업 스레드(couponIssueExecutor)
-  [3] IssueConfirmService.confirm(), 실패 시 SREM                  3단계와 같은 확정·보상
-결과 API: publishReceivers(받은 구독자 수별 요청 수), redisOnlyMembers(예약만 있고 확정되지 않은 회원)
+  [3] IssueConfirmService.confirm(), 실패 시 SREM                  3단계와 같은 실제 지급·보상
+결과 API: publishReceivers(받은 구독자 수별 요청 수), redisOnlyMembers(Redis 지급 처리만 있고 실제 지급되지 않은 회원)
 ```
 
-### Stream 발급 플로우 (6단계, REDIS_STREAM)
+### Stream 지급 플로우 (6단계, REDIS_STREAM)
 
 ```
 발행자 프로세스 (local)            StreamIssueCouponService               ← 요청 스레드
-  REDIS_STREAM         Lua 예약 → XADD coupon:issue:stream (두 명령 사이에서 죽으면 예약만 남음)
-  REDIS_STREAM_ATOMIC  EVALSHA 한 번: 예약 판단 → XADD → SADD
+  REDIS_STREAM         Lua 지급 처리 → XADD coupon:issue:stream (두 명령 사이에서 죽으면 Redis 지급 처리만 남음)
+  REDIS_STREAM_ATOMIC  EVALSHA 한 번: 지급 가능 여부 판단 → XADD → SADD
   → HTTP 202 (QUEUED)
 소비자 프로세스 (stream-consumer)    그룹 coupon-issuers, 소비자 4개(consumer-{pid}-n)
   XREADGROUP → IssueConfirmService.confirm() → 커밋 뒤 XACK
-    UNIQUE 위반(이미 발급, 재처리 포함) → XACK / 품절·없는 회원 → SREM, XACK / 그 밖의 실패 → ACK 안 함(pending 에 남음)
+    UNIQUE 위반(이미 지급, 재처리 포함) → XACK / 품절·없는 회원 → SREM, XACK / 그 밖의 실패 → ACK 안 함(pending 에 남음)
   1초마다 XAUTOCLAIM(최소 유휴 5초)으로 회수해 다시 처리. 전달 3회를 넘으면 coupon:issue:stream:dead 에 남기고 SREM, XACK
-결과 API: redisOnlyMembers(예약만 있고 확정 안 된 회원), stream(스트림 전체의 길이·대기·pending·따로 보관 수)
+결과 API: redisOnlyMembers(Redis 지급 처리만 있고 실제 지급 안 된 회원), stream(스트림 전체의 길이·대기·pending·따로 보관 수)
 ```
 
 ### write-behind 플로우 (9단계, REDIS_WRITE_BEHIND)
@@ -115,28 +115,28 @@ AsyncIssueCouponService.issue(memberId, couponId)        ← 요청 스레드
 ```
 요청 (local)          회원 존재 확인 → EVALSHA: 중복 → 재고 → XADD coupon:wb:stream → SADD  → 202 (QUEUED). DB 에 쓰지 않는다
 적재기 (wb-loader)    XREADGROUP (자기 pending 먼저) COUNT 100 → 한 트랜잭션에 INSERT ... ON DUPLICATE KEY (쿠폰 행 갱신 없음) → 커밋 뒤 XACK
-                      묶음 실패 시 한 건씩 다시. 전달 3회 초과는 coupon:wb:stream:dead 에 남기고 XACK (예약은 그대로, 대사가 채움)
+                      묶음 실패 시 한 건씩 다시. 전달 3회 초과는 coupon:wb:stream:dead 에 남기고 XACK (Redis 지급 처리는 그대로, 대사가 채움)
 대사 (API)            DB 먼저 읽고 Redis 명단과 비교 → Redis 에만 있는 회원 INSERT, issued_count = COUNT(*)
-Redis 가 기준이라 DB 의 조건부 UPDATE 방어가 없다. Redis 가 기록을 잃으면(영속화 끔 + 재시작) 초과 발급을 막지 못한다
+Redis 가 기준이라 DB 의 조건부 UPDATE 방어가 없다. Redis 가 기록을 잃으면(영속화 끔 + 재시작) 초과 지급을 막지 못한다
 ```
 
 ### Redis Key 구조
 | 키 패턴 | 자료형 | 용도 |
 |---|---|---|
-| `coupon:total:{couponId}` | String | 쿠폰 총 발급 수량 캐시 (쿠폰 생성 시 웜업, 불변) |
-| `coupon:issued:{couponId}` | SET | 발급 자격을 예약한 회원 집합 (DB 확정 전 예약 포함, 중복 방지 + 수량 추적) |
-| `coupon:issue:stream` | Stream | 6단계 확정 요청. 그룹 `coupon-issuers`. ACK 해도 지워지지 않고 자르지 않는다 |
+| `coupon:total:{couponId}` | String | 쿠폰 총 지급 수량 캐시 (쿠폰 생성 시 웜업, 불변) |
+| `coupon:issued:{couponId}` | SET | Redis 지급 처리된 회원 집합 (실제 쿠폰 지급 전 회원 포함, 중복 방지 + 수량 추적) |
+| `coupon:issue:stream` | Stream | 6단계 실제 지급 요청. 그룹 `coupon-issuers`. ACK 해도 지워지지 않고 자르지 않는다 |
 | `coupon:issue:stream:dead` | Stream | 6단계 전달 횟수 상한을 넘긴 메시지 |
 | `coupon:wb:stream` | Stream | 9단계 적재 요청. 그룹 `coupon-wb-loaders`, 소비자 이름 `loader` 하나 |
 | `coupon:wb:stream:dead` | Stream | 9단계 전달 횟수 상한을 넘겨 적재를 포기한 메시지 (원래 필드, originalId, deliveries, error) |
 
 ### Concurrency Strategy
-- **Redis 예약**: 명령 하나는 원자적이지만 명령 사이에는 다른 요청이 끼어든다. 판단과 예약을 한 번에 하려면 Lua(또는 WATCH)를 쓴다. MULTI/EXEC 는 묶어 실행할 뿐 결과로 분기하지 못해 SREM 으로 되돌린다
+- **Redis 지급 처리**: 명령 하나는 원자적이지만 명령 사이에는 다른 요청이 끼어든다. 판단과 지급 처리를 한 번에 하려면 Lua(또는 WATCH)를 쓴다. MULTI/EXEC 는 묶어 실행할 뿐 결과로 분기하지 못해 SREM 으로 되돌린다
 - **DB 조건부 UPDATE + UNIQUE**: Redis 통과 후 DB 수준에서 최종 수량·중복 검증. Redis 와 MySQL 은 한 트랜잭션이 아니다
-- **보상 SREM**: DB 확정 실패 시 예약을 되돌린다. 예약 뒤 프로세스가 죽으면 예약만 남는다(4~6단계 주제)
-- **비동기 확정 (4단계)**: 접수(202)는 발급 완료가 아니다. 확정 작업은 JVM 메모리 큐에 있으므로 프로세스가 죽으면 예약만 남는다. `@Async` 는 다른 빈에서 호출해야 프록시를 지나고, 작업 스레드(스레드 풀 안에서 확정을 실행하는 스레드)에는 요청 스레드의 트랜잭션이 없다
+- **보상 SREM**: 실제 쿠폰 지급 실패 시 Redis 지급 처리를 취소한다. Redis 지급 처리 뒤 프로세스가 죽으면 Redis 지급 처리만 남는다(4~6단계 주제)
+- **비동기 실제 지급 (4단계)**: 지급 성공 응답(202)은 실제 지급 완료가 아니다. 실제 지급 작업은 JVM 메모리 큐에 있으므로 프로세스가 죽으면 Redis 지급 처리만 남는다. `@Async` 는 다른 빈에서 호출해야 프록시를 지나고, 작업 스레드(스레드 풀 안에서 실제 지급을 실행하는 스레드)에는 요청 스레드의 트랜잭션이 없다
 - **Pub/Sub (5단계)**: 메시지를 저장하지 않는다. 구독자가 없거나 끊긴 동안 보낸 메시지, 받았지만 처리 전에 구독자가 죽은 메시지는 사라진다. 채널은 Redis DB 번호와 관계없이 서버 전체에서 하나다. 구독자 프로세스는 `SPRING_PROFILES_ACTIVE=pubsub-consumer` 로 띄운다
-- **Streams (6단계)**: DB 커밋 뒤에만 XACK. 재처리는 UNIQUE 위반으로 끝나 ACK 한다(확정 트랜잭션이 INSERT 먼저라 issued_count 는 다시 늘지 않음). 일시적 실패는 ACK·보상 모두 하지 않고 회수(XAUTOCLAIM)로 다시 처리, 전달 3회 초과면 따로 보관 후 SREM. 소비자 프로세스는 `SPRING_PROFILES_ACTIVE=stream-consumer`
+- **Streams (6단계)**: DB 커밋 뒤에만 XACK. 재처리는 UNIQUE 위반으로 끝나 ACK 한다(실제 지급 트랜잭션이 INSERT 먼저라 issued_count 는 다시 늘지 않음). 일시적 실패는 ACK·보상 모두 하지 않고 회수(XAUTOCLAIM)로 다시 처리, 전달 3회 초과면 따로 보관 후 SREM. 소비자 프로세스는 `SPRING_PROFILES_ACTIVE=stream-consumer`
 - **실패 지점**: `global/failure/FailurePoints` — 테스트가 회원 단위로 멈춤·실패·종료 흉내를 건다. `LAB_HALT_AT=<지점>` 이면 그 지점에서 JVM 을 즉시 종료한다
 
 ### Global Infrastructure (`global` 패키지)
@@ -155,7 +155,7 @@ Redis 가 기준이라 DB 의 조건부 UPDATE 방어가 없다. Redis 가 기�
 
 ## 문서 용어
 
-`docs/learning/`, `performance/` 의 README 는 여기어때 기술 블로그 "Redis&Kafka를 활용한 선착순 쿠폰 이벤트 개발기 (feat. 네고왕)" 의 표현을 따른다.
+이 파일과 `docs/learning/`, `performance/` 의 README 는 여기어때 기술 블로그 "Redis&Kafka를 활용한 선착순 쿠폰 이벤트 개발기 (feat. 네고왕)" 의 표현을 따른다.
 
 | 뜻 | 쓰는 말 | 쓰지 않는 말 |
 |---|---|---|
