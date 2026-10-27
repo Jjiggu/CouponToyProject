@@ -37,5 +37,4 @@ public class Coupon extends BaseTimeEntity {
         }
         issuedCount++;
     }
-
 }

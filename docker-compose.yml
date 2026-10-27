@@ -1,0 +1,43 @@
+services:
+  mysql:
+    image: mysql:8.0.36
+    container_name: coupon-toy-mysql
+    cpus: "1.0"
+    mem_limit: 1g
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-CouponToyProject}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-7815aA!@}
+      TZ: Asia/Seoul
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p${MYSQL_ROOT_PASSWORD:-7815aA!@}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: coupon-toy-redis
+    cpus: "1.0"
+    mem_limit: 1g
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - redis-data:/data
+
+volumes:
+  mysql-data:
+  redis-data:

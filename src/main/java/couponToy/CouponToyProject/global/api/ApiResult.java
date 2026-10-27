@@ -20,4 +20,8 @@ public class ApiResult<T> {
         return response;
     }
 
+    public ApiError getError() {
+        return error;
+    }
+
 }
