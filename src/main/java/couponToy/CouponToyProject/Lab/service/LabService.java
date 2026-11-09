@@ -5,6 +5,7 @@ import couponToy.CouponToyProject.Coupon.dto.CouponCreateResponse;
 import couponToy.CouponToyProject.Coupon.service.CouponService;
 import couponToy.CouponToyProject.CouponIssue.dto.IssueCouponResponse;
 import couponToy.CouponToyProject.CouponIssue.service.AsyncIssueCouponService;
+import couponToy.CouponToyProject.CouponIssue.service.IssueConfirmService;
 import couponToy.CouponToyProject.CouponIssue.repository.CouponIssuedRedisRepository;
 import couponToy.CouponToyProject.CouponIssue.service.CouponIssueStrategy;
 import couponToy.CouponToyProject.CouponIssue.service.IsolationIssueCouponService;
@@ -50,6 +51,7 @@ public class LabService {
     private final CouponService couponService;
     private final IsolationIssueCouponService isolationIssueCouponService;
     private final PessimisticIssueCouponService pessimisticIssueCouponService;
+    private final IssueConfirmService issueConfirmService;
     private final OptimisticIssueCouponService optimisticIssueCouponService;
     private final RedisIssueCouponService redisIssueCouponService;
     private final AsyncIssueCouponService asyncIssueCouponService;
@@ -141,6 +143,7 @@ public class LabService {
                 case REPEATABLE_READ -> isolationIssueCouponService.issueWithRepeatableRead(memberId, couponId, duplicateCheck);
                 case SERIALIZABLE -> isolationIssueCouponService.issueWithSerializable(memberId, couponId, duplicateCheck);
                 case PESSIMISTIC -> pessimisticIssueCouponService.issueCoupon(memberId, couponId);
+                case CONDITIONAL_UPDATE -> issueConfirmService.confirm(memberId, couponId);
                 case OPTIMISTIC -> optimisticIssueCouponService.issue(memberId, couponId);
                 case OPTIMISTIC_RETRY -> optimisticIssueCouponService.issueWithRetry(memberId, couponId, n -> attempts[0] = n);
                 case REDIS_SET_ONLY -> redisIssueCouponService.issue(memberId, couponId, ReservationMethod.SET_ONLY, n -> attempts[0] = n);

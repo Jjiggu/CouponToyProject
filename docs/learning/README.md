@@ -51,8 +51,9 @@ API (`local` 프로필에서만 등록, 인증 없음)
 |---|---|---|---|
 | POST | `/lab/members` | `{"count": 1000}` | 회원 일괄 생성, `firstMemberId`~`lastMemberId` 반환 |
 | POST | `/lab/coupons` | `{"name": "s1", "totalCount": 100}` | 쿠폰 생성. 쿠폰마다 요청 기록과 InnoDB 락 카운터 기준값을 새로 잡는다 |
-| POST | `/lab/coupons/{id}/issue` | `{"memberId": 1, "method": "SERIALIZABLE"}` | 방식 선택 지급. `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `OPTIMISTIC`, `OPTIMISTIC_RETRY`, `REDIS_SET_ONLY`, `REDIS_MULTI_EXEC`, `REDIS_WATCH`, `REDIS_LUA`, `REDIS_EVENT`. 격리 수준 방식은 `"duplicateCheck": false` 로 중복 확인 SELECT 를 뺄 수 있다 |
+| POST | `/lab/coupons/{id}/issue` | `{"memberId": 1, "method": "SERIALIZABLE"}` | 방식 선택 지급. `READ_COMMITTED`, `REPEATABLE_READ`, `SERIALIZABLE`, `PESSIMISTIC`, `CONDITIONAL_UPDATE`, `OPTIMISTIC`, `OPTIMISTIC_RETRY`, `REDIS_SET_ONLY`, `REDIS_MULTI_EXEC`, `REDIS_WATCH`, `REDIS_LUA`, `REDIS_EVENT`. 격리 수준 방식은 `"duplicateCheck": false` 로 중복 확인 SELECT 를 뺄 수 있다 |
 | GET | `/lab/coupons/{id}/result` | | 검증 기준, 요청 결과, 순서, 서버 측 지연, 락 카운터 변화량 |
+| GET | `/lab/db-ping` | | 커넥션을 빌려 `SELECT 1` 실행 (DB 조회 부하 측정용) |
 | DELETE | `/lab/data` | | **설정된 DB 의 `coupon_issues`·`coupons`·`members` 를 TRUNCATE 하고 Redis `coupon:*` 키를 지운다** |
 
 데이터 분리

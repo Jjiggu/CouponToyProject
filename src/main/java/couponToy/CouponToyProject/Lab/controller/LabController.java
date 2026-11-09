@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.EnumSet;
@@ -32,6 +33,7 @@ public class LabController {
             CouponIssueStrategy.REDIS_WRITE_BEHIND, CouponIssueStrategy.REDIS_WRITE_BEHIND_NO_TX);
 
     private final LabService labService;
+    private final JdbcTemplate jdbcTemplate;
 
     public record CreateMembersRequest(@NotNull @Positive @Max(200_000) Integer count) {
     }
@@ -73,6 +75,11 @@ public class LabController {
     @GetMapping("/coupons/{couponId}/result")
     public ResponseEntity<?> result(@PathVariable Long couponId) {
         return ResponseEntity.ok(ApiUtils.success(labService.result(couponId)));
+    }
+
+    @GetMapping("/db-ping")
+    public ResponseEntity<?> dbPing() {
+        return ResponseEntity.ok(ApiUtils.success(jdbcTemplate.queryForObject("SELECT 1", Integer.class)));
     }
 
     @DeleteMapping("/data")

@@ -57,7 +57,7 @@
 - 지연이 고정이라, 함께 충돌한 요청들이 같은 순간에 다시 충돌한다.
 - 애노테이션 기반이라 호출하는 쪽에서 재시도가 보이지 않는다. 바깥 트랜잭션 안에서 불리면 재시도가 같은 트랜잭션 안에서 돈다. 다만 advice 순서(`LOWEST_PRECEDENCE - 1`)는 트랜잭션 바깥에서 재시도하도록 맞게 잡혀 있었다.
 
-실험 API: `method` 에 `PESSIMISTIC`, `OPTIMISTIC`, `OPTIMISTIC_RETRY`. 결과 API 의 `attempts` 에 요청별 시도 분포, 총 시도 수, 버전 충돌 수가 나온다. 버전 충돌은 데드락처럼 재시도하면 성공할 수 있는 실패라서 HTTP 503 이다.
+실험 API: `method` 에 `PESSIMISTIC`, `CONDITIONAL_UPDATE`, `OPTIMISTIC`, `OPTIMISTIC_RETRY`. `CONDITIONAL_UPDATE` 는 Redis 선점 없이 `IssueConfirmService.confirm()` 을 바로 호출해, 발급 이력 INSERT 와 `issued_count < total_count` 조건부 UPDATE 를 한 트랜잭션에서 처리한다. 결과 API 의 `attempts` 에 요청별 시도 분포, 총 시도 수, 버전 충돌 수가 나온다. 버전 충돌은 데드락처럼 재시도하면 성공할 수 있는 실패라서 HTTP 503 이다.
 
 ## 3. 직접 실행할 명령과 바꿔볼 조건
 
