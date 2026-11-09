@@ -24,7 +24,9 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * EC2 에서 잰 값(9단계 문서 4절): 요청 하나에 MySQL CPU 약 340µs 였고, 그중 SELECT 는 115µs, 나머지 약 225µs 가 위의 설정 문장과 COMMIT 이다.
  * 카카오페이 글(https://tech.kakaopay.com/post/jpa-transactional-bri/ "실제로 set_option과 commit이 성능에 영향을 미칠까?")과 같은 문제이고,
- * 같은 해법을 쓴다: readOnly 에 propagation = SUPPORTS.
+ * 같은 방향으로 푼다: SimpleJpaRepository 의 기본 메서드를 거치지 않게 하고, readOnly 에는 propagation = SUPPORTS 를 쓴다.
+ * 트랜잭션을 없앤 것은 existsById 를 직접 선언한 @Query 메서드로 바꾼 일이다. @Query 메서드는 SimpleJpaRepository 의 클래스 단위 @Transactional 을 물려받지 않는다.
+ * SUPPORTS 는 트랜잭션을 없애는 장치가 아니라, 트랜잭션 없이 실행한다는 의도를 적어 둔 것이다.
  *
  * Repository 만 상속하고 JpaRepository 는 상속하지 않는다. 이 인터페이스에 있는 메서드는 아래 하나뿐이고,
  * SimpleJpaRepository 의 기본 메서드(existsById 등)와 그 클래스 단위 @Transactional(readOnly = true)가 여기에는 딸려 오지 않는다.
